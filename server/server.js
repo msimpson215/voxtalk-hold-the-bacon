@@ -25,7 +25,7 @@ app.post("/session", (req, res) => {
   });
 });
 
-// Health check for uptime monitors / investor demos
+// Health check
 app.get("/health", (req, res) => {
   res.json({ status: "ok", uptime: process.uptime() });
 });
