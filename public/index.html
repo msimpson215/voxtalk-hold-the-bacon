@@ -120,7 +120,6 @@
         const buf = await blob.arrayBuffer();
         const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
 
-        // send buffer to Whisper
         const resp = await fetch("/transcribe-stream", {
           method:"POST",
           headers:{ "Content-Type":"application/json" },
