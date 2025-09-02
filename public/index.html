@@ -124,9 +124,9 @@
         const offer = await pc.createOffer({ offerToReceiveAudio:true });
         await pc.setLocalDescription(offer);
 
-        // 🔒 Force English every time
+        // 🚫 disable auto greeting with &conversation=none
         const r = await fetch(
-          `https://api.openai.com/v1/realtime?model=${encodeURIComponent(model)}&voice=${voice}&language=${language || "en-US"}`,
+          `https://api.openai.com/v1/realtime?model=${encodeURIComponent(model)}&voice=${voice}&language=${language || "en-US"}&conversation=none`,
           {
             method:"POST",
             headers:{
@@ -139,13 +139,14 @@
         const answer = {type:"answer", sdp: await r.text()};
         await pc.setRemoteDescription(answer);
 
-        // ⚡ Extra enforcement: force English instructions
+        // 🔒 Enforce English permanently
         dc.onopen = () => {
           const enforceEnglish = {
             type: "response.create",
             response: {
-              instructions: "Always respond in English, even if the user speaks another language.",
-              conversation: "none"
+              modalities: ["text","audio"],
+              conversation: "default",
+              instructions: "You are VoxTalk. Always respond ONLY in English. Never respond in Spanish or any other language, even if the user speaks it."
             }
           };
           dc.send(JSON.stringify(enforceEnglish));
