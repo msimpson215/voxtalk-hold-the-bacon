@@ -9,13 +9,13 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-const FIXED_VOICE = "verse";   // AI voice
-const FIXED_LANG = "en-US";    // Force English
+const FIXED_VOICE = "verse";
+const FIXED_LANG = "en-US";
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "../public")));
 
-// 🔹 Session for OpenAI Realtime
+// 🔹 Session for OpenAI Realtime (English only)
 app.post("/session", (req, res) => {
   res.json({
     client_secret: { value: process.env.OPENAI_API_KEY || "fake-token" },
@@ -33,8 +33,9 @@ const server = app.listen(PORT, () => {
 const wss = new WebSocketServer({ server });
 
 wss.on("connection", async (client) => {
-  console.log("🎤 Mic stream connected");
+  console.log("🎤 Client mic connected");
 
+  // Force Deepgram English
   const dgSocket = new WebSocket(
     "wss://api.deepgram.com/v1/listen?language=en-US&punctuate=true",
     {
@@ -44,17 +45,15 @@ wss.on("connection", async (client) => {
 
   dgSocket.on("open", () => console.log("🔗 Connected to Deepgram"));
 
-  // Forward mic audio → Deepgram
   client.on("message", (msg) => {
     dgSocket.send(msg);
   });
 
   client.on("close", () => {
     dgSocket.close();
-    console.log("❌ Mic closed");
+    console.log("❌ Mic stream closed");
   });
 
-  // Deepgram → send English text back to browser
   dgSocket.on("message", (data) => {
     try {
       const dgResp = JSON.parse(data.toString());
