@@ -119,7 +119,10 @@
           // ✅ Ask AI for text + audio
           dc.send(JSON.stringify({
             type:"response.create",
-            response:{ instructions:text, modalities:["audio","text"] }
+            response:{
+              instructions:text,
+              modalities:["audio","text"] // 👈 this forces voice
+            }
           }));
         }
       };
