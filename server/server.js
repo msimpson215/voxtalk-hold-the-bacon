@@ -12,7 +12,7 @@ const PORT = process.env.PORT || 3000;
 const FIXED_VOICE = "verse";
 const FIXED_LANG = "en-US";
 
-app.use(express.json({ limit: "10mb" }));
+app.use(express.json());
 app.use(express.static(path.join(__dirname, "../public")));
 
 // 🔹 Session for OpenAI Realtime
@@ -21,52 +21,46 @@ app.post("/session", (req, res) => {
     client_secret: { value: process.env.OPENAI_API_KEY || "fake-token" },
     model: "gpt-4o-realtime-preview",
     voice: FIXED_VOICE,
-    language: FIXED_LANG
+    language: FIXED_LANG,
   });
 });
 
-// Start HTTP server
 const server = app.listen(PORT, () => {
   console.log(`✅ Hold-the-Bacon running on http://localhost:${PORT}`);
 });
 
-// 🔹 WebSocket for mic → Deepgram → Realtime
+// 🔹 WebSocket: Mic → Deepgram → Browser
 const wss = new WebSocketServer({ server });
 
 wss.on("connection", async (client) => {
-  console.log("🎤 Client connected to VoxTalk mic stream");
+  console.log("🎤 Client mic connected");
 
-  // Connect to Deepgram streaming API
   const dgSocket = new WebSocket(
     "wss://api.deepgram.com/v1/listen?language=en-US&punctuate=true",
     {
-      headers: { Authorization: `Token ${process.env.DEEPGRAM_API_KEY}` }
+      headers: { Authorization: `Token ${process.env.DEEPGRAM_API_KEY}` },
     }
   );
 
-  dgSocket.on("open", () => {
-    console.log("🔗 Connected to Deepgram ASR");
-  });
+  dgSocket.on("open", () => console.log("🔗 Connected to Deepgram"));
 
-  // Forward mic audio to Deepgram
+  // forward mic audio to Deepgram
   client.on("message", (msg) => {
     dgSocket.send(msg);
   });
 
   client.on("close", () => {
-    console.log("❌ Client mic closed");
     dgSocket.close();
+    console.log("❌ Mic stream closed");
   });
 
-  // Deepgram transcription results → send back to browser
+  // send transcriptions back to client (so it can inject into AI)
   dgSocket.on("message", (data) => {
     try {
       const dgResp = JSON.parse(data.toString());
-      if (dgResp.channel?.alternatives?.[0]?.transcript) {
-        const text = dgResp.channel.alternatives[0].transcript.trim();
-        if (text) {
-          client.send(JSON.stringify({ text }));
-        }
+      const text = dgResp.channel?.alternatives?.[0]?.transcript?.trim();
+      if (text) {
+        client.send(JSON.stringify({ text }));
       }
     } catch (err) {
       console.error("Deepgram parse error:", err);
