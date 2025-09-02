@@ -99,13 +99,21 @@
       const answer = {type:"answer", sdp: await r.text()};
       await pc.setRemoteDescription(answer);
 
-      // Hard English-only lock
+      // 🔒 Hard English-only lock + kickoff audio
       dc.onopen = () => {
         dc.send(JSON.stringify({
           type:"session.update",
           session:{
             instructions:"Always respond ONLY in English. Refuse other languages.",
             voice, language:"en-US"
+          }
+        }));
+        // Kickoff response to attach audio stream
+        dc.send(JSON.stringify({
+          type:"response.create",
+          response:{
+            instructions:"Hello, VoxTalk is ready.",
+            modalities:["audio","text"]
           }
         }));
       };
@@ -121,7 +129,7 @@
             type:"response.create",
             response:{
               instructions:text,
-              modalities:["audio","text"] // 👈 this forces voice
+              modalities:["audio","text"]
             }
           }));
         }
