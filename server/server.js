@@ -1,35 +1,138 @@
-import express from "express";
-import path from "path";
-import { fileURLToPath } from "url";
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>VoxTalk</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" href="data:,">
+  <style>
+    body { margin:0; font-family:system-ui,sans-serif;
+      display:grid; place-items:center; min-height:100vh;
+      background: radial-gradient(circle at 50% 20%, #dbeafe, #93c5fd 40%, #1e3a8a 90%);
+    }
+    .app { text-align:center; max-width:600px; }
+    h1 { margin:6px 0; font-size:22px; color:white; text-shadow:0 1px 3px #000; }
+    #pttBtn { width:120px; height:120px; border-radius:50%; border:none; cursor:pointer;
+      background: radial-gradient(circle at 30% 30%, #3b82f6, #1e40af);
+      box-shadow:0 6px 18px rgba(37,99,235,.3); transition: transform 0.15s ease; }
+    #pttBtn.listening { animation: pulse 1.6s ease-in-out infinite; }
+    @keyframes pulse {
+      0% { box-shadow:0 0 0 0 rgba(59,130,246,.7); }
+      50% { box-shadow:0 0 0 20px rgba(59,130,246,0); }
+      100% { box-shadow:0 0 0 0 rgba(59,130,246,0); }
+    }
+    #answer { margin-top:20px; padding:12px; border:1px solid #ccc;
+      border-radius:8px; background:white; min-height:80px; text-align:left; font-size:14px; }
+    .line { margin:6px 0; }
+    .me { color:#2563eb; font-weight:600; }
+    .ai { color:#065f46; font-weight:600; }
+    .text { color:#111; font-weight:normal; }
+    .muted { color:#777; font-style:italic; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <h1>Talk to VoxTalk</h1>
+    <button id="pttBtn">🎤</button>
+    <div id="answer"><div class="muted">Conversation will appear here.</div></div>
+    <audio id="remote" autoplay playsinline></audio>
+  </div>
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+  <script>
+    const pttBtn = document.getElementById("pttBtn");
+    const answerEl = document.getElementById("answer");
+    const rtAudio = document.getElementById("remote");
+    let talking = false, dc, micStream;
 
-const app = express();
-const PORT = process.env.PORT || 3000;
+    function appendLine(role, text) {
+      if (answerEl.querySelector(".muted")) answerEl.innerHTML = "";
+      const div = document.createElement("div");
+      div.className = "line";
+      div.innerHTML = `<span class="${role}">${role==="me"?"You:":"AI:"}</span>
+                       <span class="text">${text}</span>`;
+      answerEl.appendChild(div);
+      answerEl.scrollTop = answerEl.scrollHeight;
+    }
 
-// Fixed voice + language (English only)
-const FIXED_VOICE = "verse";
-const FIXED_LANG  = "en-US";
+    // Simple English detector (rejects most Spanish)
+    function isEnglish(str) {
+      return /^[A-Za-z0-9\s.,!?'"-]+$/.test(str);
+    }
 
-app.use(express.json());
-app.use(express.static(path.join(__dirname, "../public")));
+    async function initRealtime() {
+      const s = await fetch("/session",{method:"POST"});
+      const { client_secret, model, voice, language } = await s.json();
 
-app.post("/session", (req, res) => {
-  console.log(`🎤 Session started → Voice: ${FIXED_VOICE}, Lang: ${FIXED_LANG}`);
-  res.json({
-    client_secret: { value: process.env.OPENAI_API_KEY || "fake-token" },
-    model: "gpt-4o-realtime-preview",
-    voice: FIXED_VOICE,
-    language: FIXED_LANG
-  });
-});
+      const pc = new RTCPeerConnection();
+      pc.ontrack = (ev)=>{ rtAudio.srcObject = ev.streams[0]; };
 
-// Health check
-app.get("/health", (req, res) => {
-  res.json({ status: "ok", uptime: process.uptime() });
-});
+      dc = pc.createDataChannel("events");
+      dc.onmessage = (e)=>{
+        try {
+          const evt = JSON.parse(e.data);
+          if (evt.type==="response.message.delta") {
+            const chunk = evt.delta.map(d=>d.content?.[0]?.text||"").join("");
+            if (chunk) {
+              // Enforce English output
+              if (!isEnglish(chunk)) {
+                appendLine("ai","[Sorry, English only.]");
+              } else {
+                appendLine("ai",chunk);
+              }
+            }
+          }
+        } catch{}
+      };
 
-app.listen(PORT, () => {
-  console.log(`✅ Server running on http://localhost:${PORT}`);
-});
+      micStream = await navigator.mediaDevices.getUserMedia({ audio:true });
+      micStream.getTracks()[0].enabled = false;
+      pc.addTrack(micStream.getTracks()[0], micStream);
+
+      const offer = await pc.createOffer({ offerToReceiveAudio:true });
+      await pc.setLocalDescription(offer);
+
+      const r = await fetch(
+        `https://api.openai.com/v1/realtime?model=${encodeURIComponent(model)}&voice=${voice}&language=${language}`,
+        {
+          method:"POST",
+          headers:{
+            "Authorization":`Bearer ${client_secret.value}`,
+            "Content-Type":"application/sdp"
+          },
+          body: offer.sdp
+        }
+      );
+      const answer = {type:"answer", sdp: await r.text()};
+      await pc.setRemoteDescription(answer);
+
+      dc.onopen = () => {
+        // Global lock
+        dc.send(JSON.stringify({
+          type:"session.update",
+          session:{
+            instructions:"Always respond ONLY in English. If user speaks another language, reply: 'Sorry, English only.'",
+            voice, language:"en-US"
+          }
+        }));
+        // Kickoff
+        dc.send(JSON.stringify({
+          type:"response.create",
+          response:{
+            instructions:"Hello, VoxTalk is ready in English.",
+            modalities:["audio","text"]
+          }
+        }));
+      };
+
+      // Button toggle
+      pttBtn.onclick = ()=>{
+        talking = !talking;
+        pttBtn.classList.toggle("listening", talking);
+        appendLine("me", talking ? "(Listening…)" : "(Stopped)");
+        micStream.getTracks()[0].enabled = talking;
+      };
+    }
+    initRealtime();
+  </script>
+</body>
+</html>
