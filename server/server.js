@@ -2,6 +2,8 @@ import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
 import fetch from "node-fetch";
+import { Readable } from "stream";
+import FormData from "form-data";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -9,40 +11,42 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Fixed voice + language
 const FIXED_VOICE = "verse";
 const FIXED_LANG  = "en-US";
 
-app.use(express.json());
+app.use(express.json({ limit: "10mb" }));
 app.use(express.static(path.join(__dirname, "../public")));
 
-// 🟢 Whisper transcription route
-app.post("/transcribe", async (req, res) => {
+// 🔹 Streaming transcription endpoint
+app.post("/transcribe-stream", async (req, res) => {
   try {
-    const audioBuffer = Buffer.from(req.body.audio, "base64"); // client sends mic audio as base64
+    const audioBuffer = Buffer.from(req.body.audio, "base64");
+
+    const form = new FormData();
+    form.append("file", Readable.from(audioBuffer), {
+      filename: "audio.wav",
+      contentType: "audio/wav"
+    });
+    form.append("model", "whisper-1");
+    form.append("language", "en"); // 🔒 lock to English
+
     const whisperResp = await fetch("https://api.openai.com/v1/audio/transcriptions", {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`
       },
-      body: (() => {
-        const form = new FormData();
-        form.append("file", audioBuffer, "speech.wav");
-        form.append("model", "whisper-1");
-        form.append("language", "en"); // 🔒 English-only transcription
-        return form;
-      })()
+      body: form
     });
 
     const data = await whisperResp.json();
     res.json({ text: data.text });
   } catch (err) {
-    console.error("Whisper transcription failed:", err);
+    console.error("❌ Whisper streaming failed:", err);
     res.status(500).json({ error: "Transcription failed" });
   }
 });
 
-// Session init for Realtime
+// 🔹 Session for OpenAI Realtime
 app.post("/session", (req, res) => {
   res.json({
     client_secret: { value: process.env.OPENAI_API_KEY || "fake-token" },
@@ -53,5 +57,5 @@ app.post("/session", (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`✅ Hold-the-Bacon server running on http://localhost:${PORT}`);
+  console.log(`✅ Hold-the-Bacon running on http://localhost:${PORT}`);
 });
