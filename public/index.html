@@ -1,57 +1,150 @@
-import express from "express";
-import path from "path";
-import { fileURLToPath } from "url";
-import fetch from "node-fetch";
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>VoxTalk</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" href="data:,">
+  <style>
+    body { margin:0; font-family:system-ui,sans-serif;
+      display:grid; place-items:center; min-height:100vh;
+      background: radial-gradient(circle at 50% 20%, #dbeafe, #93c5fd 40%, #1e3a8a 90%); }
+    .app { text-align:center; max-width:600px; }
+    h1 { margin:6px 0; font-size:22px; }
+    #pttBtn { width:120px; height:120px; border-radius:50%;
+      border:none; cursor:pointer;
+      background: radial-gradient(circle at 30% 30%, #3b82f6, #1e40af);
+      box-shadow:0 6px 18px rgba(37,99,235,.3); }
+    #answer { margin-top:20px; padding:12px; border:1px solid #ccc;
+      border-radius:8px; background:white; min-height:80px;
+      text-align:left; font-size:14px; }
+    .line { margin:6px 0; }
+    .me { color:#2563eb; font-weight:600; }
+    .ai { color:#065f46; font-weight:600; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <h1>Talk to VoxTalk</h1>
+    <button id="pttBtn">🎤</button>
+    <div id="answer"><div class="muted">Conversation will appear here.</div></div>
+    <audio id="remote" autoplay playsinline></audio>
+  </div>
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+  <script>
+    const pttBtn = document.getElementById("pttBtn");
+    const answerEl = document.getElementById("answer");
+    const rtAudio = document.getElementById("remote");
+    let wakeLock = null, talking = false, dc;
 
-const app = express();
-const PORT = process.env.PORT || 3000;
+    function appendLine(role, text) {
+      if (answerEl.querySelector(".muted")) answerEl.innerHTML = "";
+      const div = document.createElement("div");
+      div.className = "line";
+      div.innerHTML = `<span class="${role}">${role==="me"?"You:":"AI:"}</span>
+                       <span>${text}</span>`;
+      answerEl.appendChild(div);
+      answerEl.scrollTop = answerEl.scrollHeight;
+    }
 
-// Fixed voice + language
-const FIXED_VOICE = "verse";
-const FIXED_LANG  = "en-US";
+    async function requestWakeLock() {
+      try { wakeLock = await navigator.wakeLock.request("screen"); }
+      catch (err) { console.error("WakeLock error:", err); }
+    }
+    async function releaseWakeLock() {
+      if (wakeLock) { await wakeLock.release(); wakeLock = null; }
+    }
 
-app.use(express.json());
-app.use(express.static(path.join(__dirname, "../public")));
+    async function initRealtime() {
+      const s = await fetch("/session",{method:"POST"});
+      const { client_secret, model, voice, language } = await s.json();
 
-// 🟢 Whisper transcription route
-app.post("/transcribe", async (req, res) => {
-  try {
-    const audioBuffer = Buffer.from(req.body.audio, "base64"); // client sends mic audio as base64
-    const whisperResp = await fetch("https://api.openai.com/v1/audio/transcriptions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
-      },
-      body: (() => {
-        const form = new FormData();
-        form.append("file", audioBuffer, "speech.wav");
-        form.append("model", "whisper-1");
-        form.append("language", "en"); // 🔒 English-only transcription
-        return form;
-      })()
-    });
+      const pc = new RTCPeerConnection();
+      pc.ontrack = (ev)=>{ rtAudio.srcObject = ev.streams[0]; };
 
-    const data = await whisperResp.json();
-    res.json({ text: data.text });
-  } catch (err) {
-    console.error("Whisper transcription failed:", err);
-    res.status(500).json({ error: "Transcription failed" });
-  }
-});
+      dc = pc.createDataChannel("events");
+      dc.onmessage = (e)=>{
+        try {
+          const evt = JSON.parse(e.data);
+          if (evt.type==="response.message.delta") {
+            const chunk = evt.delta.map(d=>d.content?.[0]?.text||"").join("");
+            if (chunk) appendLine("ai",chunk);
+          }
+        } catch{}
+      };
 
-// Session init for Realtime
-app.post("/session", (req, res) => {
-  res.json({
-    client_secret: { value: process.env.OPENAI_API_KEY || "fake-token" },
-    model: "gpt-4o-realtime-preview",
-    voice: FIXED_VOICE,
-    language: FIXED_LANG
-  });
-});
+      const offer = await pc.createOffer({ offerToReceiveAudio:true });
+      await pc.setLocalDescription(offer);
 
-app.listen(PORT, () => {
-  console.log(`✅ Hold-the-Bacon server running on http://localhost:${PORT}`);
-});
+      const r = await fetch(
+        `https://api.openai.com/v1/realtime?model=${encodeURIComponent(model)}&voice=${voice}&language=${language}&conversation=none`,
+        {
+          method:"POST",
+          headers:{
+            "Authorization":`Bearer ${client_secret.value}`,
+            "Content-Type":"application/sdp"
+          },
+          body: offer.sdp
+        }
+      );
+      const answer = {type:"answer", sdp: await r.text()};
+      await pc.setRemoteDescription(answer);
+
+      // 🔒 lock session English only
+      dc.onopen = () => {
+        dc.send(JSON.stringify({
+          type:"session.update",
+          session:{
+            instructions:"Always respond ONLY in English. Refuse other languages.",
+            voice, language:"en-US"
+          }
+        }));
+      };
+
+      // 🎤 Streaming microphone → Whisper → Realtime
+      const stream = await navigator.mediaDevices.getUserMedia({ audio:true });
+      const audioCtx = new AudioContext();
+      const source = audioCtx.createMediaStreamSource(stream);
+      const processor = audioCtx.createScriptProcessor(4096, 1, 1);
+      source.connect(processor);
+      processor.connect(audioCtx.destination);
+
+      processor.onaudioprocess = async (e) => {
+        if (!talking) return;
+        const input = e.inputBuffer.getChannelData(0);
+        const pcm16 = new Int16Array(input.length);
+        for (let i=0; i<input.length; i++) {
+          pcm16[i] = Math.max(-1, Math.min(1, input[i])) * 0x7fff;
+        }
+        const blob = new Blob([pcm16], { type: "audio/wav" });
+        const buf = await blob.arrayBuffer();
+        const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
+
+        // send buffer to Whisper
+        const resp = await fetch("/transcribe-stream", {
+          method:"POST",
+          headers:{ "Content-Type":"application/json" },
+          body: JSON.stringify({ audio: b64 })
+        });
+        const { text } = await resp.json();
+        if (text) {
+          appendLine("me", text);
+          dc.send(JSON.stringify({ type:"response.create", response:{ instructions:text } }));
+        }
+      };
+
+      pttBtn.onclick = async ()=>{
+        talking = !talking;
+        if (talking) {
+          appendLine("me","(Listening...)");
+          await requestWakeLock();
+        } else {
+          appendLine("me","(Stopped)");
+          await releaseWakeLock();
+        }
+      };
+    }
+    initRealtime();
+  </script>
+</body>
+</html>
