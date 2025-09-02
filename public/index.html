@@ -12,46 +12,34 @@
       background: radial-gradient(circle at 50% 20%, #dbeafe, #93c5fd 40%, #1e3a8a 90%);
     }
     .app { text-align:center; max-width:600px; }
-
     .demo-label { font-size:12px; color:#111; margin-bottom:4px; }
     h1 { margin:6px 0; font-size:22px; }
 
-    /* Core mic button */
+    /* Mic button */
     #pttBtn {
       width:120px; height:120px;
       border-radius:50%; border:none; outline:none; cursor:pointer;
       background: radial-gradient(circle at 30% 30%, #3b82f6, #1e40af);
       box-shadow:0 6px 18px rgba(37,99,235,.3);
       transition: transform 0.15s ease, box-shadow 0.3s ease, background 0.3s ease;
-      position: relative;
-      overflow:hidden;
+      position: relative; overflow:hidden;
     }
     #pttBtn:hover { transform: scale(1.02); }
     #pttBtn:active { transform: scale(0.95); }
-
-    /* Listening state (pulsing glow) */
-    #pttBtn.listening {
-      animation: listenPulse 1.6s ease-in-out infinite;
-    }
+    #pttBtn.listening { animation: listenPulse 1.6s ease-in-out infinite; }
     @keyframes listenPulse {
-      0%   { box-shadow:0 0 0 0 rgba(59,130,246,.7); }
-      50%  { box-shadow:0 0 0 20px rgba(59,130,246,0); }
-      100% { box-shadow:0 0 0 0 rgba(59,130,246,0); }
+      0%{ box-shadow:0 0 0 0 rgba(59,130,246,.7); }
+      50%{ box-shadow:0 0 0 20px rgba(59,130,246,0); }
+      100%{ box-shadow:0 0 0 0 rgba(59,130,246,0); }
     }
-
-    /* Speaking state (ocean swirl) */
     #pttBtn.speaking::before {
-      content:""; position:absolute; inset:0;
-      border-radius:50%;
-      background: conic-gradient(from 0deg, #60a5fa, #2563eb, #1e40af, #60a5fa);
+      content:""; position:absolute; inset:0; border-radius:50%;
+      background: conic-gradient(from 0deg,#60a5fa,#2563eb,#1e40af,#60a5fa);
       animation: swirl 2s linear infinite;
-      -webkit-mask: radial-gradient(circle, rgba(0,0,0,0) 65%, rgba(0,0,0,1) 66%);
-              mask: radial-gradient(circle, rgba(0,0,0,0) 65%, rgba(0,0,0,1) 66%);
+      -webkit-mask: radial-gradient(circle,rgba(0,0,0,0) 65%,rgba(0,0,0,1) 66%);
+              mask: radial-gradient(circle,rgba(0,0,0,0) 65%,rgba(0,0,0,1) 66%);
     }
-    @keyframes swirl {
-      from { transform: rotate(0deg); }
-      to   { transform: rotate(360deg); }
-    }
+    @keyframes swirl { from{transform:rotate(0deg);} to{transform:rotate(360deg);} }
 
     #answer {
       margin-top:20px; padding:12px; border:1px solid #ccc;
@@ -80,6 +68,23 @@
     const answerEl = document.getElementById('answer');
     const rtAudio  = document.getElementById('remote');
 
+    let wakeLock = null;
+
+    async function requestWakeLock() {
+      try {
+        wakeLock = await navigator.wakeLock.request("screen");
+        console.log("✅ Wake Lock active");
+        wakeLock.addEventListener("release", () => {
+          console.log("❌ Wake Lock released");
+        });
+      } catch (err) {
+        console.error("Wake Lock error:", err);
+      }
+    }
+    async function releaseWakeLock() {
+      if (wakeLock) { await wakeLock.release(); wakeLock = null; }
+    }
+
     function appendLine(role, text) {
       if (answerEl.querySelector('.muted')) answerEl.innerHTML = '';
       const div = document.createElement('div');
@@ -89,73 +94,71 @@
       answerEl.appendChild(div);
       answerEl.scrollTop = answerEl.scrollHeight;
     }
-    function setListening(on) { pttBtn.classList.toggle('listening', on); }
-    function setSpeaking(on) { pttBtn.classList.toggle('speaking', on); }
+    function setListening(on){ pttBtn.classList.toggle('listening',on); }
+    function setSpeaking(on){ pttBtn.classList.toggle('speaking',on); }
 
     async function initRealtime() {
       try {
-        const s = await fetch("/session", { method:"POST" });
-        const { client_secret, model, voice } = await s.json();
+        const s = await fetch("/session",{method:"POST"});
+        const { client_secret, model, voice, language } = await s.json();
 
         const pc = new RTCPeerConnection();
         const mic = await navigator.mediaDevices.getUserMedia({ audio:true });
         const micTrack = mic.getTracks()[0];
         micTrack.enabled = false;
-        pc.addTrack(micTrack, mic);
+        pc.addTrack(micTrack,mic);
 
-        pc.ontrack = (ev)=> {
-          rtAudio.srcObject = ev.streams[0];
-          rtAudio.play().catch(()=>{});
-        };
+        pc.ontrack = (ev)=>{ rtAudio.srcObject=ev.streams[0]; };
 
         const dc = pc.createDataChannel("events");
-        dc.onmessage = (e)=> {
+        dc.onmessage = (e)=>{
           try {
             const evt = JSON.parse(e.data);
-            if (evt.type === "response.message.delta") {
+            if (evt.type==="response.message.delta") {
               const chunk = evt.delta.map(d=>d.content?.[0]?.text||"").join("");
-              if (chunk) appendLine("ai", chunk);
+              if (chunk) appendLine("ai",chunk);
             }
-          } catch {}
+          }catch{}
         };
 
         const offer = await pc.createOffer({ offerToReceiveAudio:true });
         await pc.setLocalDescription(offer);
 
+        // 🔒 Force English every time
         const r = await fetch(
-          `https://api.openai.com/v1/realtime?model=${encodeURIComponent(model)}&voice=${voice}`,
+          `https://api.openai.com/v1/realtime?model=${encodeURIComponent(model)}&voice=${voice}&language=${language || "en-US"}`,
           {
             method:"POST",
-            headers: {
+            headers:{
               "Authorization":`Bearer ${client_secret.value}`,
               "Content-Type":"application/sdp"
             },
             body: offer.sdp
           }
         );
-        const answer = { type:"answer", sdp: await r.text() };
+        const answer = {type:"answer", sdp: await r.text()};
         await pc.setRemoteDescription(answer);
 
-        let talking = false;
-        pttBtn.onclick = () => {
-          talking = !talking;
-          micTrack.enabled = talking;
+        let talking=false;
+        pttBtn.onclick = async ()=>{
+          talking=!talking;
+          micTrack.enabled=talking;
           setListening(talking);
-          if (talking) {
+          if(talking){
             appendLine("me","(Listening...)");
+            await requestWakeLock();
           } else {
             setListening(false); setSpeaking(false);
             appendLine("me","(Stopped)");
+            await releaseWakeLock();
           }
         };
 
-        rtAudio.addEventListener("playing", ()=> setSpeaking(true));
-        rtAudio.addEventListener("ended",   ()=> { setSpeaking(false); setListening(false); talking=false; });
-        rtAudio.addEventListener("pause",   ()=> { setSpeaking(false); setListening(false); talking=false; });
+        rtAudio.addEventListener("playing",()=>setSpeaking(true));
+        rtAudio.addEventListener("ended",()=>{setSpeaking(false);setListening(false);talking=false;});
+        rtAudio.addEventListener("pause",()=>{setSpeaking(false);setListening(false);talking=false;});
 
-      } catch(err) {
-        console.error("Realtime init failed", err);
-      }
+      } catch(err){ console.error("Realtime init failed",err); }
     }
     initRealtime();
   </script>
