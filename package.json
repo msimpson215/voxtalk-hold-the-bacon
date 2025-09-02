@@ -1,12 +1,14 @@
 {
-  "name": "voxtalk-realtime",
+  "name": "voxtalk-hold-the-bacon",
   "version": "1.0.0",
-  "type": "module",
+  "description": "VoxTalk demo with Deepgram streaming ASR",
   "main": "server/server.js",
+  "type": "module",
   "scripts": {
     "start": "node server/server.js"
   },
   "dependencies": {
-    "express": "^4.18.2"
+    "express": "^4.19.2",
+    "ws": "^8.17.0"
   }
 }
