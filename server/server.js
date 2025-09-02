@@ -2,7 +2,6 @@ import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
 import { WebSocketServer } from "ws";
-import fetch from "node-fetch";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -22,7 +21,7 @@ app.post("/session", (req, res) => {
     client_secret: { value: process.env.OPENAI_API_KEY || "fake-token" },
     model: "gpt-4o-realtime-preview",
     voice: FIXED_VOICE,
-    language: FIXED_LANG,
+    language: FIXED_LANG
   });
 });
 
@@ -41,7 +40,7 @@ wss.on("connection", async (client) => {
   const dgSocket = new WebSocket(
     "wss://api.deepgram.com/v1/listen?language=en-US&punctuate=true",
     {
-      headers: { Authorization: `Token ${process.env.DEEPGRAM_API_KEY}` },
+      headers: { Authorization: `Token ${process.env.DEEPGRAM_API_KEY}` }
     }
   );
 
@@ -66,11 +65,7 @@ wss.on("connection", async (client) => {
       if (dgResp.channel?.alternatives?.[0]?.transcript) {
         const text = dgResp.channel.alternatives[0].transcript.trim();
         if (text) {
-          // Send transcription to client (browser)
           client.send(JSON.stringify({ text }));
-
-          // Optionally: inject text straight into OpenAI Realtime here
-          // (For now we just send back to browser for injection via DC)
         }
       }
     } catch (err) {
