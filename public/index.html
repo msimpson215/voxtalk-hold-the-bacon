@@ -62,6 +62,11 @@
       answerEl.scrollTop = answerEl.scrollHeight;
     }
 
+    // Simple English detector (only allow ASCII letters/numbers/punctuation)
+    function looksEnglish(text) {
+      return /^[\x00-\x7F]+$/.test(text);
+    }
+
     async function initRealtime() {
       const s = await fetch("/session",{method:"POST"});
       const { client_secret, model, voice, language } = await s.json();
@@ -101,7 +106,6 @@
 
       // 🔒 Hard English-only lock + kickoff audio
       dc.onopen = () => {
-        // lock session
         dc.send(JSON.stringify({
           type:"session.update",
           session:{
@@ -109,11 +113,10 @@
             voice, language:"en-US"
           }
         }));
-        // kickoff response to attach audio
         dc.send(JSON.stringify({
           type:"response.create",
           response:{
-            instructions:"Hello, VoxTalk is ready.",
+            instructions:"Hello, VoxTalk is ready in English.",
             modalities:["audio","text"]
           }
         }));
@@ -125,7 +128,13 @@
         const { text } = JSON.parse(event.data);
         if (text) {
           appendLine("me", text);
-          // ✅ Only send if channel is open
+
+          // 🚫 Skip non-English transcripts
+          if (!looksEnglish(text)) {
+            console.warn("Blocked non-English transcript:", text);
+            return;
+          }
+
           if (dc && dc.readyState === "open") {
             dc.send(JSON.stringify({
               type:"response.create",
