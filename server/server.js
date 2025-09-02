@@ -1,7 +1,6 @@
 import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
-import fetch from "node-fetch";
 import { Readable } from "stream";
 import FormData from "form-data";
 
@@ -17,7 +16,7 @@ const FIXED_LANG  = "en-US";
 app.use(express.json({ limit: "10mb" }));
 app.use(express.static(path.join(__dirname, "../public")));
 
-// 🔹 Streaming transcription endpoint
+// 🔹 Streaming transcription endpoint (Whisper, locked to English)
 app.post("/transcribe-stream", async (req, res) => {
   try {
     const audioBuffer = Buffer.from(req.body.audio, "base64");
@@ -28,7 +27,7 @@ app.post("/transcribe-stream", async (req, res) => {
       contentType: "audio/wav"
     });
     form.append("model", "whisper-1");
-    form.append("language", "en"); // 🔒 lock to English
+    form.append("language", "en"); // 🔒 force English transcription
 
     const whisperResp = await fetch("https://api.openai.com/v1/audio/transcriptions", {
       method: "POST",
