@@ -9,8 +9,8 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-const FIXED_VOICE = "verse";
-const FIXED_LANG = "en-US";
+const FIXED_VOICE = "verse";   // AI voice
+const FIXED_LANG = "en-US";    // Force English
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "../public")));
@@ -26,14 +26,14 @@ app.post("/session", (req, res) => {
 });
 
 const server = app.listen(PORT, () => {
-  console.log(`✅ Hold-the-Bacon running on http://localhost:${PORT}`);
+  console.log(`✅ VoxTalk running on http://localhost:${PORT}`);
 });
 
 // 🔹 WebSocket: Mic → Deepgram → Browser
 const wss = new WebSocketServer({ server });
 
 wss.on("connection", async (client) => {
-  console.log("🎤 Client mic connected");
+  console.log("🎤 Mic stream connected");
 
   const dgSocket = new WebSocket(
     "wss://api.deepgram.com/v1/listen?language=en-US&punctuate=true",
@@ -44,22 +44,22 @@ wss.on("connection", async (client) => {
 
   dgSocket.on("open", () => console.log("🔗 Connected to Deepgram"));
 
+  // Forward mic audio → Deepgram
   client.on("message", (msg) => {
     dgSocket.send(msg);
   });
 
   client.on("close", () => {
     dgSocket.close();
-    console.log("❌ Mic stream closed");
+    console.log("❌ Mic closed");
   });
 
+  // Deepgram → send English text back to browser
   dgSocket.on("message", (data) => {
     try {
       const dgResp = JSON.parse(data.toString());
       const text = dgResp.channel?.alternatives?.[0]?.transcript?.trim();
-      if (text) {
-        client.send(JSON.stringify({ text }));
-      }
+      if (text) client.send(JSON.stringify({ text }));
     } catch (err) {
       console.error("Deepgram parse error:", err);
     }
