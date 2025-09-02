@@ -82,8 +82,9 @@
         } catch{}
       };
 
-      // 🎤 Get mic and add track directly
+      // 🎤 Mic direct → OpenAI
       micStream = await navigator.mediaDevices.getUserMedia({ audio:true });
+      micStream.getTracks()[0].enabled = false; // start muted
       pc.addTrack(micStream.getTracks()[0], micStream);
 
       const offer = await pc.createOffer({ offerToReceiveAudio:true });
