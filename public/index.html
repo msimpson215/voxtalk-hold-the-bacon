@@ -35,7 +35,7 @@
     const pttBtn = document.getElementById("pttBtn");
     const answerEl = document.getElementById("answer");
     const rtAudio = document.getElementById("remote");
-    let wakeLock = null, talking = false, dc;
+    let wakeLock = null, talking = false, dc, micSocket;
 
     function appendLine(role, text) {
       if (answerEl.querySelector(".muted")) answerEl.innerHTML = "";
@@ -90,7 +90,7 @@
       const answer = {type:"answer", sdp: await r.text()};
       await pc.setRemoteDescription(answer);
 
-      // 🔒 lock session English only
+      // Lock English only
       dc.onopen = () => {
         dc.send(JSON.stringify({
           type:"session.update",
@@ -101,7 +101,18 @@
         }));
       };
 
-      // 🎤 Streaming microphone → Whisper → Realtime
+      // 🔹 Connect to server WebSocket for mic streaming
+      micSocket = new WebSocket(`wss://${window.location.host}`);
+      micSocket.onopen = () => console.log("🎤 Mic socket open");
+      micSocket.onmessage = (event) => {
+        const { text } = JSON.parse(event.data);
+        if (text) {
+          appendLine("me", text);
+          dc.send(JSON.stringify({ type:"response.create", response:{ instructions:text } }));
+        }
+      };
+
+      // Capture mic audio and push raw PCM to server socket
       const stream = await navigator.mediaDevices.getUserMedia({ audio:true });
       const audioCtx = new AudioContext();
       const source = audioCtx.createMediaStreamSource(stream);
@@ -109,27 +120,14 @@
       source.connect(processor);
       processor.connect(audioCtx.destination);
 
-      processor.onaudioprocess = async (e) => {
-        if (!talking) return;
+      processor.onaudioprocess = (e) => {
+        if (!talking || micSocket.readyState !== WebSocket.OPEN) return;
         const input = e.inputBuffer.getChannelData(0);
         const pcm16 = new Int16Array(input.length);
         for (let i=0; i<input.length; i++) {
           pcm16[i] = Math.max(-1, Math.min(1, input[i])) * 0x7fff;
         }
-        const blob = new Blob([pcm16], { type: "audio/wav" });
-        const buf = await blob.arrayBuffer();
-        const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
-
-        const resp = await fetch("/transcribe-stream", {
-          method:"POST",
-          headers:{ "Content-Type":"application/json" },
-          body: JSON.stringify({ audio: b64 })
-        });
-        const { text } = await resp.json();
-        if (text) {
-          appendLine("me", text);
-          dc.send(JSON.stringify({ type:"response.create", response:{ instructions:text } }));
-        }
+        micSocket.send(Buffer.from(pcm16.buffer));
       };
 
       pttBtn.onclick = async ()=>{
