@@ -10,7 +10,7 @@ const PORT = process.env.PORT || 3000;
 
 // Fixed voice + language
 const FIXED_VOICE = "verse";
-const FIXED_LANG  = "en";
+const FIXED_LANG  = "en-US"; // 🔒 Always English
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "../public")));
@@ -25,8 +25,11 @@ app.post("/session", (req, res) => {
   });
 });
 
-app.get("/health", (req, res) => { res.send("OK"); });
+// Health check for uptime monitors / investor demos
+app.get("/health", (req, res) => {
+  res.json({ status: "ok", uptime: process.uptime() });
+});
 
 app.listen(PORT, () => {
-  console.log(`✅ Server running on port ${PORT}`);
+  console.log(`✅ Server running on http://localhost:${PORT}`);
 });
