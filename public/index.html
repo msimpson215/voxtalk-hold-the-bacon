@@ -50,7 +50,7 @@
     const pttBtn = document.getElementById("pttBtn");
     const answerEl = document.getElementById("answer");
     const rtAudio = document.getElementById("remote");
-    let talking = false, dc, micSocket;
+    let talking = false, dc, micStream;
 
     function appendLine(role, text) {
       if (answerEl.querySelector(".muted")) answerEl.innerHTML = "";
@@ -60,11 +60,6 @@
                        <span class="text">${text}</span>`;
       answerEl.appendChild(div);
       answerEl.scrollTop = answerEl.scrollHeight;
-    }
-
-    // Simple English detector (only allow ASCII letters/numbers/punctuation)
-    function looksEnglish(text) {
-      return /^[\x00-\x7F]+$/.test(text);
     }
 
     async function initRealtime() {
@@ -86,6 +81,10 @@
           }
         } catch{}
       };
+
+      // 🎤 Get mic and add track directly
+      micStream = await navigator.mediaDevices.getUserMedia({ audio:true });
+      pc.addTrack(micStream.getTracks()[0], micStream);
 
       const offer = await pc.createOffer({ offerToReceiveAudio:true });
       await pc.setLocalDescription(offer);
@@ -122,56 +121,12 @@
         }));
       };
 
-      // Mic socket → transcript → AI
-      micSocket = new WebSocket(`wss://${window.location.host}`);
-      micSocket.onmessage = (event) => {
-        const { text } = JSON.parse(event.data);
-        if (text) {
-          appendLine("me", text);
-
-          // 🚫 Skip non-English transcripts
-          if (!looksEnglish(text)) {
-            console.warn("Blocked non-English transcript:", text);
-            return;
-          }
-
-          if (dc && dc.readyState === "open") {
-            dc.send(JSON.stringify({
-              type:"response.create",
-              response:{
-                instructions:text,
-                modalities:["audio","text"]
-              }
-            }));
-          } else {
-            console.warn("⚠️ Data channel not open yet, skipping response");
-          }
-        }
-      };
-
-      // Capture mic audio
-      const stream = await navigator.mediaDevices.getUserMedia({ audio:true });
-      const audioCtx = new AudioContext();
-      const source = audioCtx.createMediaStreamSource(stream);
-      const processor = audioCtx.createScriptProcessor(4096, 1, 1);
-      source.connect(processor);
-      processor.connect(audioCtx.destination);
-
-      processor.onaudioprocess = (e) => {
-        if (!talking || micSocket.readyState !== WebSocket.OPEN) return;
-        const input = e.inputBuffer.getChannelData(0);
-        const pcm16 = new Int16Array(input.length);
-        for (let i=0; i<input.length; i++) {
-          pcm16[i] = Math.max(-1, Math.min(1, input[i])) * 0x7fff;
-        }
-        micSocket.send(pcm16.buffer);
-      };
-
       // Button toggle
       pttBtn.onclick = ()=>{
         talking = !talking;
         pttBtn.classList.toggle("listening", talking);
         appendLine("me", talking ? "(Listening…)" : "(Stopped)");
+        micStream.getTracks()[0].enabled = talking;
       };
     }
     initRealtime();
