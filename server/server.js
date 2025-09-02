@@ -2,7 +2,6 @@ import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
 import { Readable } from "stream";
-import FormData from "form-data";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -21,11 +20,9 @@ app.post("/transcribe-stream", async (req, res) => {
   try {
     const audioBuffer = Buffer.from(req.body.audio, "base64");
 
+    // Use built-in FormData in Node v22
     const form = new FormData();
-    form.append("file", Readable.from(audioBuffer), {
-      filename: "audio.wav",
-      contentType: "audio/wav"
-    });
+    form.append("file", new Blob([audioBuffer], { type: "audio/wav" }), "audio.wav");
     form.append("model", "whisper-1");
     form.append("language", "en"); // 🔒 force English transcription
 
