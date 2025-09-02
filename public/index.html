@@ -139,6 +139,18 @@
         const answer = {type:"answer", sdp: await r.text()};
         await pc.setRemoteDescription(answer);
 
+        // ⚡ Extra enforcement: force English instructions
+        dc.onopen = () => {
+          const enforceEnglish = {
+            type: "response.create",
+            response: {
+              instructions: "Always respond in English, even if the user speaks another language.",
+              conversation: "none"
+            }
+          };
+          dc.send(JSON.stringify(enforceEnglish));
+        };
+
         let talking=false;
         pttBtn.onclick = async ()=>{
           talking=!talking;
