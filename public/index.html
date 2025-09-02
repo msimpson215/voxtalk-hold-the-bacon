@@ -6,31 +6,23 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" href="data:,">
   <style>
-    body {
-      margin:0; font-family:system-ui,sans-serif;
+    body { margin:0; font-family:system-ui,sans-serif;
       display:grid; place-items:center; min-height:100vh;
       background: radial-gradient(circle at 50% 20%, #dbeafe, #93c5fd 40%, #1e3a8a 90%);
     }
     .app { text-align:center; max-width:600px; }
     h1 { margin:6px 0; font-size:22px; color:white; text-shadow:0 1px 3px #000; }
-    #pttBtn {
-      width:120px; height:120px;
-      border-radius:50%; border:none; cursor:pointer;
+    #pttBtn { width:120px; height:120px; border-radius:50%; border:none; cursor:pointer;
       background: radial-gradient(circle at 30% 30%, #3b82f6, #1e40af);
-      box-shadow:0 6px 18px rgba(37,99,235,.3);
-      transition: transform 0.15s ease;
-    }
+      box-shadow:0 6px 18px rgba(37,99,235,.3); transition: transform 0.15s ease; }
     #pttBtn.listening { animation: pulse 1.6s ease-in-out infinite; }
     @keyframes pulse {
-      0%   { box-shadow:0 0 0 0 rgba(59,130,246,.7); }
-      50%  { box-shadow:0 0 0 20px rgba(59,130,246,0); }
+      0% { box-shadow:0 0 0 0 rgba(59,130,246,.7); }
+      50% { box-shadow:0 0 0 20px rgba(59,130,246,0); }
       100% { box-shadow:0 0 0 0 rgba(59,130,246,0); }
     }
-    #answer {
-      margin-top:20px; padding:12px; border:1px solid #ccc;
-      border-radius:8px; background:white;
-      min-height:80px; text-align:left; font-size:14px;
-    }
+    #answer { margin-top:20px; padding:12px; border:1px solid #ccc;
+      border-radius:8px; background:white; min-height:80px; text-align:left; font-size:14px; }
     .line { margin:6px 0; }
     .me { color:#2563eb; font-weight:600; }
     .ai { color:#065f46; font-weight:600; }
@@ -62,13 +54,16 @@
       answerEl.scrollTop = answerEl.scrollHeight;
     }
 
+    // Simple English detector (rejects most Spanish)
+    function isEnglish(str) {
+      return /^[A-Za-z0-9\s.,!?'"-]+$/.test(str);
+    }
+
     async function initRealtime() {
       const s = await fetch("/session",{method:"POST"});
       const { client_secret, model, voice, language } = await s.json();
 
       const pc = new RTCPeerConnection();
-
-      // 🔊 Attach AI voice
       pc.ontrack = (ev)=>{ rtAudio.srcObject = ev.streams[0]; };
 
       dc = pc.createDataChannel("events");
@@ -77,14 +72,20 @@
           const evt = JSON.parse(e.data);
           if (evt.type==="response.message.delta") {
             const chunk = evt.delta.map(d=>d.content?.[0]?.text||"").join("");
-            if (chunk) appendLine("ai",chunk);
+            if (chunk) {
+              // Enforce English output
+              if (!isEnglish(chunk)) {
+                appendLine("ai","[Sorry, English only.]");
+              } else {
+                appendLine("ai",chunk);
+              }
+            }
           }
         } catch{}
       };
 
-      // 🎤 Mic direct → OpenAI
       micStream = await navigator.mediaDevices.getUserMedia({ audio:true });
-      micStream.getTracks()[0].enabled = false; // start muted
+      micStream.getTracks()[0].enabled = false;
       pc.addTrack(micStream.getTracks()[0], micStream);
 
       const offer = await pc.createOffer({ offerToReceiveAudio:true });
@@ -104,15 +105,16 @@
       const answer = {type:"answer", sdp: await r.text()};
       await pc.setRemoteDescription(answer);
 
-      // 🔒 Hard English-only lock + kickoff audio
       dc.onopen = () => {
+        // Global lock
         dc.send(JSON.stringify({
           type:"session.update",
           session:{
-            instructions:"Always respond ONLY in English. Refuse other languages.",
+            instructions:"Always respond ONLY in English. If user speaks another language, reply: 'Sorry, English only.'",
             voice, language:"en-US"
           }
         }));
+        // Kickoff
         dc.send(JSON.stringify({
           type:"response.create",
           response:{
