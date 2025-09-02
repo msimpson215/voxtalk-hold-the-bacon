@@ -101,6 +101,7 @@
 
       // 🔒 Hard English-only lock + kickoff audio
       dc.onopen = () => {
+        // lock session
         dc.send(JSON.stringify({
           type:"session.update",
           session:{
@@ -108,7 +109,7 @@
             voice, language:"en-US"
           }
         }));
-        // Kickoff response to attach audio stream
+        // kickoff response to attach audio
         dc.send(JSON.stringify({
           type:"response.create",
           response:{
@@ -124,14 +125,18 @@
         const { text } = JSON.parse(event.data);
         if (text) {
           appendLine("me", text);
-          // ✅ Ask AI for text + audio
-          dc.send(JSON.stringify({
-            type:"response.create",
-            response:{
-              instructions:text,
-              modalities:["audio","text"]
-            }
-          }));
+          // ✅ Only send if channel is open
+          if (dc && dc.readyState === "open") {
+            dc.send(JSON.stringify({
+              type:"response.create",
+              response:{
+                instructions:text,
+                modalities:["audio","text"]
+              }
+            }));
+          } else {
+            console.warn("⚠️ Data channel not open yet, skipping response");
+          }
         }
       };
 
