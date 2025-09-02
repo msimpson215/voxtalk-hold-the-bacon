@@ -15,7 +15,7 @@ const FIXED_LANG = "en-US";
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "../public")));
 
-// 🔹 Session for OpenAI Realtime (English only)
+// 🔹 Session for OpenAI Realtime
 app.post("/session", (req, res) => {
   res.json({
     client_secret: { value: process.env.OPENAI_API_KEY || "fake-token" },
@@ -29,13 +29,13 @@ const server = app.listen(PORT, () => {
   console.log(`✅ VoxTalk running on http://localhost:${PORT}`);
 });
 
-// 🔹 WebSocket: Mic → Deepgram → Browser
+// 🔹 WebSocket: Mic → Deepgram → Filter → Browser
 const wss = new WebSocketServer({ server });
 
 wss.on("connection", async (client) => {
-  console.log("🎤 Client mic connected");
+  console.log("🎤 Client connected");
 
-  // Force Deepgram English
+  // Force English transcription
   const dgSocket = new WebSocket(
     "wss://api.deepgram.com/v1/listen?language=en-US&punctuate=true",
     {
@@ -46,19 +46,29 @@ wss.on("connection", async (client) => {
   dgSocket.on("open", () => console.log("🔗 Connected to Deepgram"));
 
   client.on("message", (msg) => {
-    dgSocket.send(msg);
+    dgSocket.send(msg); // raw audio forwarded
   });
 
   client.on("close", () => {
     dgSocket.close();
-    console.log("❌ Mic stream closed");
+    console.log("❌ Mic closed");
   });
 
   dgSocket.on("message", (data) => {
     try {
       const dgResp = JSON.parse(data.toString());
       const text = dgResp.channel?.alternatives?.[0]?.transcript?.trim();
-      if (text) client.send(JSON.stringify({ text }));
+      if (!text) return;
+
+      // 🔎 English filter: block non-English or "Spanish"
+      const isEnglish = /^[\x00-\x7F]+$/.test(text); // ASCII-only = English-ish
+      const mentionsSpanish = /spanish/i.test(text);
+
+      if (isEnglish && !mentionsSpanish) {
+        client.send(JSON.stringify({ text })); // safe → forward to browser
+      } else {
+        console.log(`⚠️ Blocked non-English transcript: "${text}"`);
+      }
     } catch (err) {
       console.error("Deepgram parse error:", err);
     }
