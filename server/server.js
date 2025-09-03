@@ -1,7 +1,7 @@
 import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
-import { WebSocketServer } from "ws";
+import { WebSocketServer, WebSocket } from "ws";   // ✅ FIX: import WebSocket here
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -24,11 +24,12 @@ if (!DEEPGRAM_API_KEY) {
   process.exit(1);
 }
 
-// WebSocket server: browser -> proxy -> Deepgram
+// Start server
 const server = app.listen(PORT, () => {
   console.log(`✅ HoldTheBacon server running at http://localhost:${PORT}`);
 });
 
+// WebSocket server: browser <-> proxy <-> Deepgram
 const wss = new WebSocketServer({ server });
 
 wss.on("connection", async (client) => {
@@ -40,21 +41,26 @@ wss.on("connection", async (client) => {
     { headers: { Authorization: `Token ${DEEPGRAM_API_KEY}` } }
   );
 
+  dgWs.on("open", () => console.log("✅ Connected to Deepgram API"));
+  dgWs.on("error", (err) => console.error("❌ Deepgram WS error:", err.message));
+  dgWs.on("close", () => console.log("⚠️ Deepgram WS closed"));
+
   // Deepgram -> Browser
-  dgWs.on("message", (msg) => client.send(msg.toString()));
+  dgWs.on("message", (msg) => {
+    console.log("📝 Deepgram msg:", msg.toString().slice(0, 80)); // preview only
+    client.send(msg.toString());
+  });
 
   // Browser -> Deepgram
   client.on("message", (msg) => dgWs.send(msg));
 
-  client.on("close", () => dgWs.close());
+  client.on("close", () => {
+    console.log("⚠️ Browser client closed");
+    dgWs.close();
+  });
 });
 
 // Session for OpenAI Realtime
 app.post("/session", (req, res) => {
   res.json({
-    client_secret: { value: process.env.OPENAI_API_KEY || "fake-token" },
-    model: "gpt-4o-realtime-preview",
-    voice: "verse",
-    language: "en-US"
-  });
-});
+    client_secret: { value: process.env_
