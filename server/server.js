@@ -9,7 +9,7 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Fixed voice + language (English only)
+// Fixed voice + language (English only bias)
 const FIXED_VOICE = "verse";
 const FIXED_LANG  = "en-US";
 
