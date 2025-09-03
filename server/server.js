@@ -1,71 +1,158 @@
-import express from "express";
-import path from "path";
-import { fileURLToPath } from "url";
-import { WebSocketServer, WebSocket } from "ws";
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>VoxTalk - HoldTheBacon</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { margin:0; font-family:system-ui,sans-serif;
+      display:grid; place-items:center; min-height:100vh;
+      background: radial-gradient(circle at 50% 20%, #dbeafe, #93c5fd 40%, #1e3a8a 90%);
+    }
+    .app { text-align:center; max-width:600px; }
+    h1 { margin:6px 0; font-size:22px; color:white; text-shadow:0 1px 3px #000; }
+    #pttBtn { width:120px; height:120px; border-radius:50%; border:none; cursor:pointer;
+      background: radial-gradient(circle at 30% 30%, #3b82f6, #1e40af);
+      box-shadow:0 6px 18px rgba(37,99,235,.3); transition: transform 0.15s ease; }
+    #pttBtn.listening { animation: pulse 1.6s ease-in-out infinite; }
+    @keyframes pulse {
+      0% { box-shadow:0 0 0 0 rgba(59,130,246,.7); }
+      50% { box-shadow:0 0 0 20px rgba(59,130,246,0); }
+      100% { box-shadow:0 0 0 0 rgba(59,130,246,0); }
+    }
+    #answer { margin-top:20px; padding:12px; border:1px solid #ccc;
+      border-radius:8px; background:white; min-height:80px; text-align:left; font-size:14px; }
+    .line { margin:6px 0; }
+    .me { color:#2563eb; font-weight:600; }
+    .ai { color:#065f46; font-weight:600; }
+    .text { color:#111; font-weight:normal; }
+    .muted { color:#777; font-style:italic; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <h1>Talk to VoxTalk</h1>
+    <button id="pttBtn">🎤</button>
+    <div id="answer"><div class="muted">Conversation will appear here.</div></div>
+    <audio id="remote" autoplay playsinline></audio>
+  </div>
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+  <script>
+    const pttBtn = document.getElementById("pttBtn");
+    const answerEl = document.getElementById("answer");
+    const rtAudio = document.getElementById("remote");
+    let talking = false, dc, dgSocket;
 
-const app = express();
-const PORT = process.env.PORT || 3000;
+    function appendLine(role, text) {
+      if (answerEl.querySelector(".muted")) answerEl.innerHTML = "";
+      const div = document.createElement("div");
+      div.className = "line";
+      div.innerHTML = `<span class="${role}">${role==="me"?"You:":"AI:"}</span>
+                       <span class="text">${text}</span>`;
+      answerEl.appendChild(div);
+      answerEl.scrollTop = answerEl.scrollHeight;
+    }
 
-app.use(express.json());
-app.use(express.static(path.join(__dirname, "../public")));
+    async function initRealtime() {
+      const s = await fetch("/session",{method:"POST"});
+      const { client_secret, model, voice, language } = await s.json();
 
-// Health check
-app.get("/health", (req, res) => {
-  res.json({ status: "ok", uptime: process.uptime() });
-});
+      const pc = new RTCPeerConnection({
+        iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+      });
+      pc.ontrack = (ev)=>{ rtAudio.srcObject = ev.streams[0]; };
 
-// Pull Deepgram key from ENV
-const DEEPGRAM_API_KEY = process.env.DEEPGRAM_API_KEY;
-if (!DEEPGRAM_API_KEY) {
-  console.error("❌ Missing DEEPGRAM_API_KEY");
-  process.exit(1);
-}
+      dc = pc.createDataChannel("events");
+      dc.onmessage = (e)=>{
+        try {
+          const evt = JSON.parse(e.data);
+          if (evt.type==="response.message.delta") {
+            const chunk = evt.delta.map(d=>d.content?.[0]?.text||"").join("");
+            if (chunk) appendLine("ai",chunk);
+          }
+        } catch(err){ console.error("Parse error:", err); }
+      };
 
-// Start server
-const server = app.listen(PORT, () => {
-  console.log(`✅ HoldTheBacon server running at http://localhost:${PORT}`);
-});
+      const offer = await pc.createOffer({ offerToReceiveAudio:true });
+      await pc.setLocalDescription(offer);
 
-// WebSocket server: browser <-> proxy <-> Deepgram
-const wss = new WebSocketServer({ server });
+      const r = await fetch(
+        `https://api.openai.com/v1/realtime?model=${encodeURIComponent(model)}&voice=${voice}&language=${language}`,
+        {
+          method:"POST",
+          headers:{
+            "Authorization":`Bearer ${client_secret.value}`,
+            "Content-Type":"application/sdp"
+          },
+          body: offer.sdp
+        }
+      );
+      const answer = {type:"answer", sdp: await r.text()};
+      await pc.setRemoteDescription(answer);
 
-wss.on("connection", async (client) => {
-  console.log("🌐 New client streaming to Deepgram…");
+      dc.onopen = () => {
+        dc.send(JSON.stringify({
+          type:"session.update",
+          session:{
+            instructions:"Always respond ONLY in English. If user speaks another language, reply: 'Sorry, English only.'",
+            voice, language:"en-US"
+          }
+        }));
+      };
 
-  // Connect to Deepgram streaming API (English-only model)
-  const dgWs = new WebSocket(
-    "wss://api.deepgram.com/v1/listen?model=nova-2&language=en",
-    { headers: { Authorization: `Token ${DEEPGRAM_API_KEY}` } }
-  );
+      // 🎙 Mic → Deepgram
+      const audioCtx = new AudioContext();
+      const stream = await navigator.mediaDevices.getUserMedia({ audio:true });
+      const source = audioCtx.createMediaStreamSource(stream);
+      const processor = audioCtx.createScriptProcessor(1024, 1, 1);
+      source.connect(processor);
+      processor.connect(audioCtx.destination);
 
-  dgWs.on("open", () => console.log("✅ Connected to Deepgram API"));
-  dgWs.on("error", (err) => console.error("❌ Deepgram WS error:", err.message));
-  dgWs.on("close", () => console.log("⚠️ Deepgram WS closed"));
+      dgSocket = new WebSocket(`wss://${window.location.host}`);
+      dgSocket.binaryType = "arraybuffer";
+      dgSocket.onopen = () => console.log("✅ Browser connected to proxy WS");
+      dgSocket.onerror = (err) => console.error("❌ dgSocket error", err);
+      dgSocket.onclose = () => console.log("⚠️ dgSocket closed");
 
-  // Deepgram -> Browser
-  dgWs.on("message", (msg) => {
-    console.log("📝 Deepgram msg:", msg.toString().slice(0, 120));
-    client.send(msg.toString());
-  });
+      processor.onaudioprocess = (e) => {
+        if (!talking || dgSocket.readyState !== WebSocket.OPEN) return;
+        const input = e.inputBuffer.getChannelData(0);
+        const pcm16 = new Int16Array(input.length);
+        for (let i=0; i<input.length; i++) {
+          let s = Math.max(-1, Math.min(1, input[i]));
+          pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+        }
+        dgSocket.send(pcm16.buffer);
+      };
 
-  // Browser -> Deepgram
-  client.on("message", (msg) => dgWs.send(msg));
+      dgSocket.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          const transcript = data.channel?.alternatives?.[0]?.transcript;
+          if (transcript && transcript.length > 0) {
+            console.log("📝 Transcript:", transcript);
+            appendLine("me", transcript);
+            if (dc && dc.readyState === "open") {
+              dc.send(JSON.stringify({
+                type:"response.create",
+                response:{
+                  instructions:"Respond ONLY in English. " + transcript,
+                  modalities:["audio","text"]
+                }
+              }));
+            }
+          }
+        } catch(err){ console.error("Transcript parse error:", err); }
+      };
+    }
 
-  client.on("close", () => {
-    console.log("⚠️ Browser client closed");
-    dgWs.close();
-  });
-});
+    pttBtn.onclick = ()=>{
+      talking = !talking;
+      pttBtn.classList.toggle("listening", talking);
+      appendLine("me", talking ? "(Listening…)" : "(Stopped)");
+    };
 
-// Session for OpenAI Realtime
-app.post("/session", (req, res) => {
-  res.json({
-    client_secret: { value: process.env.OPENAI_API_KEY || "fake-token" },
-    model: "gpt-4o-realtime-preview",
-    voice: "verse",
-    language: "en-US"
-  });
-});
+    initRealtime();
+  </script>
+</body>
+</html>
