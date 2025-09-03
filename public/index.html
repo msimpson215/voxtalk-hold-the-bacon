@@ -41,7 +41,7 @@
     const pttBtn = document.getElementById("pttBtn");
     const answerEl = document.getElementById("answer");
     const rtAudio = document.getElementById("remote");
-    let talking = false, dc, dgSocket;
+    let talking = false, dc;
 
     function appendLine(role, text) {
       if (answerEl.querySelector(".muted")) answerEl.innerHTML = "";
@@ -70,7 +70,7 @@
             const chunk = evt.delta.map(d=>d.content?.[0]?.text||"").join("");
             if (chunk) appendLine("ai",chunk);
           }
-        } catch(err){ console.error("Parse error:", err); }
+        } catch{}
       };
 
       const offer = await pc.createOffer({ offerToReceiveAudio:true });
@@ -100,50 +100,9 @@
         }));
       };
 
-      // 🎙 Mic → Deepgram
-      const audioCtx = new AudioContext();
+      // 🎙 Mic → OpenAI
       const stream = await navigator.mediaDevices.getUserMedia({ audio:true });
-      const source = audioCtx.createMediaStreamSource(stream);
-      const processor = audioCtx.createScriptProcessor(1024, 1, 1);
-      source.connect(processor);
-      processor.connect(audioCtx.destination);
-
-      dgSocket = new WebSocket(`wss://${window.location.host}`);
-      dgSocket.binaryType = "arraybuffer";
-      dgSocket.onopen = () => console.log("✅ Browser connected to proxy WS");
-      dgSocket.onerror = (err) => console.error("❌ dgSocket error", err);
-      dgSocket.onclose = () => console.log("⚠️ dgSocket closed");
-
-      processor.onaudioprocess = (e) => {
-        if (!talking || dgSocket.readyState !== WebSocket.OPEN) return;
-        const input = e.inputBuffer.getChannelData(0);
-        const pcm16 = new Int16Array(input.length);
-        for (let i=0; i<input.length; i++) {
-          let s = Math.max(-1, Math.min(1, input[i]));
-          pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
-        }
-        dgSocket.send(pcm16.buffer);
-      };
-
-      dgSocket.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          const transcript = data.channel?.alternatives?.[0]?.transcript;
-          if (transcript && transcript.length > 0) {
-            console.log("📝 Transcript:", transcript);
-            appendLine("me", transcript);
-            if (dc && dc.readyState === "open") {
-              dc.send(JSON.stringify({
-                type:"response.create",
-                response:{
-                  instructions:"Respond ONLY in English. " + transcript,
-                  modalities:["audio","text"]
-                }
-              }));
-            }
-          }
-        } catch(err){ console.error("Transcript parse error:", err); }
-      };
+      stream.getTracks().forEach(track => pc.addTrack(track, stream));
     }
 
     pttBtn.onclick = ()=>{
