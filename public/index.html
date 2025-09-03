@@ -2,9 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>VoxTalk</title>
+  <title>VoxTalk - HoldTheBacon</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link rel="icon" href="data:,">
   <style>
     body { margin:0; font-family:system-ui,sans-serif;
       display:grid; place-items:center; min-height:100vh;
@@ -29,8 +28,6 @@
     .text { color:#111; font-weight:normal; }
     .muted { color:#777; font-style:italic; }
   </style>
-  <!-- Load franc-min -->
-  <script src="https://cdn.jsdelivr.net/npm/franc-min@6.1.0/index.min.js"></script>
 </head>
 <body>
   <div class="app">
@@ -44,7 +41,7 @@
     const pttBtn = document.getElementById("pttBtn");
     const answerEl = document.getElementById("answer");
     const rtAudio = document.getElementById("remote");
-    let talking = false, dc, micStream;
+    let talking = false, dc, dgSocket;
 
     function appendLine(role, text) {
       if (answerEl.querySelector(".muted")) answerEl.innerHTML = "";
@@ -54,13 +51,6 @@
                        <span class="text">${text}</span>`;
       answerEl.appendChild(div);
       answerEl.scrollTop = answerEl.scrollHeight;
-    }
-
-    // Language detection via franc-min
-    function isEnglish(str) {
-      if (!str || str.trim().length < 2) return true; // ignore very short
-      const lang = franc(str, { minLength: 2 });
-      return lang === "eng";
     }
 
     async function initRealtime() {
@@ -76,21 +66,10 @@
           const evt = JSON.parse(e.data);
           if (evt.type==="response.message.delta") {
             const chunk = evt.delta.map(d=>d.content?.[0]?.text||"").join("");
-            if (chunk) {
-              // 🔒 Output hard lock
-              if (!isEnglish(chunk)) {
-                appendLine("ai","[Sorry, English only.]");
-              } else {
-                appendLine("ai",chunk);
-              }
-            }
+            if (chunk) appendLine("ai",chunk);
           }
-        } catch {}
+        } catch{}
       };
-
-      micStream = await navigator.mediaDevices.getUserMedia({ audio:true });
-      micStream.getTracks()[0].enabled = false;
-      pc.addTrack(micStream.getTracks()[0], micStream);
 
       const offer = await pc.createOffer({ offerToReceiveAudio:true });
       await pc.setLocalDescription(offer);
@@ -110,50 +89,58 @@
       await pc.setRemoteDescription(answer);
 
       dc.onopen = () => {
-        // 🔒 Reinforce English-only session
         dc.send(JSON.stringify({
           type:"session.update",
           session:{
-            instructions:"Always respond ONLY in English. If asked or spoken to in another language, reply in English: 'Sorry, English only.'",
+            instructions:"Always respond ONLY in English. If user speaks another language, reply: 'Sorry, English only.'",
             voice, language:"en-US"
           }
         }));
-        // Kickoff
-        dc.send(JSON.stringify({
-          type:"response.create",
-          response:{
-            instructions:"Respond ONLY in English. Hello, VoxTalk is ready in English.",
-            modalities:["audio","text"]
-          }
-        }));
       };
 
-      // Button toggle
-      pttBtn.onclick = ()=>{
-        talking = !talking;
-        pttBtn.classList.toggle("listening", talking);
-        appendLine("me", talking ? "(Listening…)" : "(Stopped)");
-        micStream.getTracks()[0].enabled = talking;
-      };
+      // 🎙 Mic → Deepgram
+      const audioCtx = new AudioContext();
+      const stream = await navigator.mediaDevices.getUserMedia({ audio:true });
+      const source = audioCtx.createMediaStreamSource(stream);
+      const processor = audioCtx.createScriptProcessor(4096, 1, 1);
+      source.connect(processor);
+      processor.connect(audioCtx.destination);
 
-      // Extra: intercept mic text (simulated transcript if you add STT later)
-      // Example hook if Deepgram or Whisper sends text here:
-      /*
-      function handleTranscript(text) {
-        if (!isEnglish(text)) {
-          appendLine("ai","[Sorry, English only.]");
-        } else if (dc && dc.readyState === "open") {
-          dc.send(JSON.stringify({
-            type:"response.create",
-            response:{
-              instructions:"Respond ONLY in English. " + text,
-              modalities:["audio","text"]
-            }
-          }));
+      dgSocket = new WebSocket(`wss://${window.location.host}`);
+      processor.onaudioprocess = (e) => {
+        if (!talking || dgSocket.readyState !== WebSocket.OPEN) return;
+        const input = e.inputBuffer.getChannelData(0);
+        const pcm16 = new Int16Array(input.length);
+        for (let i=0; i<input.length; i++) {
+          pcm16[i] = Math.max(-1, Math.min(1, input[i])) * 0x7fff;
         }
-      }
-      */
+        dgSocket.send(pcm16.buffer);
+      };
+
+      dgSocket.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        const transcript = data.channel?.alternatives?.[0]?.transcript;
+        if (transcript && transcript.length > 0) {
+          appendLine("me", transcript);
+          if (dc && dc.readyState === "open") {
+            dc.send(JSON.stringify({
+              type:"response.create",
+              response:{
+                instructions:"Respond ONLY in English. " + transcript,
+                modalities:["audio","text"]
+              }
+            }));
+          }
+        }
+      };
     }
+
+    pttBtn.onclick = ()=>{
+      talking = !talking;
+      pttBtn.classList.toggle("listening", talking);
+      appendLine("me", talking ? "(Listening…)" : "(Stopped)");
+    };
+
     initRealtime();
   </script>
 </body>
