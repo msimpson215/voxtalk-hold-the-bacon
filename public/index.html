@@ -57,7 +57,9 @@
       const s = await fetch("/session",{method:"POST"});
       const { client_secret, model, voice, language } = await s.json();
 
-      const pc = new RTCPeerConnection();
+      const pc = new RTCPeerConnection({
+        iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+      });
       pc.ontrack = (ev)=>{ rtAudio.srcObject = ev.streams[0]; };
 
       dc = pc.createDataChannel("events");
@@ -68,7 +70,7 @@
             const chunk = evt.delta.map(d=>d.content?.[0]?.text||"").join("");
             if (chunk) appendLine("ai",chunk);
           }
-        } catch{}
+        } catch(err){ console.error("Parse error:", err); }
       };
 
       const offer = await pc.createOffer({ offerToReceiveAudio:true });
@@ -102,36 +104,45 @@
       const audioCtx = new AudioContext();
       const stream = await navigator.mediaDevices.getUserMedia({ audio:true });
       const source = audioCtx.createMediaStreamSource(stream);
-      const processor = audioCtx.createScriptProcessor(4096, 1, 1);
+      const processor = audioCtx.createScriptProcessor(1024, 1, 1);
       source.connect(processor);
       processor.connect(audioCtx.destination);
 
       dgSocket = new WebSocket(`wss://${window.location.host}`);
+      dgSocket.binaryType = "arraybuffer";
+      dgSocket.onopen = () => console.log("✅ Browser connected to proxy WS");
+      dgSocket.onerror = (err) => console.error("❌ dgSocket error", err);
+      dgSocket.onclose = () => console.log("⚠️ dgSocket closed");
+
       processor.onaudioprocess = (e) => {
         if (!talking || dgSocket.readyState !== WebSocket.OPEN) return;
         const input = e.inputBuffer.getChannelData(0);
         const pcm16 = new Int16Array(input.length);
         for (let i=0; i<input.length; i++) {
-          pcm16[i] = Math.max(-1, Math.min(1, input[i])) * 0x7fff;
+          let s = Math.max(-1, Math.min(1, input[i]));
+          pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
         }
         dgSocket.send(pcm16.buffer);
       };
 
       dgSocket.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        const transcript = data.channel?.alternatives?.[0]?.transcript;
-        if (transcript && transcript.length > 0) {
-          appendLine("me", transcript);
-          if (dc && dc.readyState === "open") {
-            dc.send(JSON.stringify({
-              type:"response.create",
-              response:{
-                instructions:"Respond ONLY in English. " + transcript,
-                modalities:["audio","text"]
-              }
-            }));
+        try {
+          const data = JSON.parse(event.data);
+          const transcript = data.channel?.alternatives?.[0]?.transcript;
+          if (transcript && transcript.length > 0) {
+            console.log("📝 Transcript:", transcript);
+            appendLine("me", transcript);
+            if (dc && dc.readyState === "open") {
+              dc.send(JSON.stringify({
+                type:"response.create",
+                response:{
+                  instructions:"Respond ONLY in English. " + transcript,
+                  modalities:["audio","text"]
+                }
+              }));
+            }
           }
-        }
+        } catch(err){ console.error("Transcript parse error:", err); }
       };
     }
 
