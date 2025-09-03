@@ -1,6 +1,7 @@
 {
   "name": "voxtalk-hold-the-bacon",
   "version": "1.0.0",
+  "description": "VoxTalk with Deepgram + OpenAI Realtime",
   "main": "server/server.js",
   "type": "module",
   "scripts": {
