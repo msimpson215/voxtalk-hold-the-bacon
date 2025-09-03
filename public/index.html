@@ -61,4 +61,78 @@
 
     async function initRealtime() {
       const s = await fetch("/session",{method:"POST"});
-      const { client_secret, model, voice, langua_
+      const { client_secret, model, voice, language } = await s.json();
+
+      const pc = new RTCPeerConnection();
+      pc.ontrack = (ev)=>{ rtAudio.srcObject = ev.streams[0]; };
+
+      dc = pc.createDataChannel("events");
+      dc.onmessage = (e)=>{
+        try {
+          const evt = JSON.parse(e.data);
+          if (evt.type==="response.message.delta") {
+            const chunk = evt.delta.map(d=>d.content?.[0]?.text||"").join("");
+            if (chunk) {
+              // ✅ Enforce English output
+              if (!isEnglish(chunk)) {
+                appendLine("ai","[Sorry, English only.]");
+              } else {
+                appendLine("ai",chunk);
+              }
+            }
+          }
+        } catch{}
+      };
+
+      micStream = await navigator.mediaDevices.getUserMedia({ audio:true });
+      micStream.getTracks()[0].enabled = false;
+      pc.addTrack(micStream.getTracks()[0], micStream);
+
+      const offer = await pc.createOffer({ offerToReceiveAudio:true });
+      await pc.setLocalDescription(offer);
+
+      const r = await fetch(
+        `https://api.openai.com/v1/realtime?model=${encodeURIComponent(model)}&voice=${voice}&language=${language}`,
+        {
+          method:"POST",
+          headers:{
+            "Authorization":`Bearer ${client_secret.value}`,
+            "Content-Type":"application/sdp"
+          },
+          body: offer.sdp
+        }
+      );
+      const answer = {type:"answer", sdp: await r.text()};
+      await pc.setRemoteDescription(answer);
+
+      dc.onopen = () => {
+        // 🔒 Reinforce English-only session
+        dc.send(JSON.stringify({
+          type:"session.update",
+          session:{
+            instructions:"Always respond ONLY in English. If asked to speak Spanish or another language, reply in English: 'Sorry, English only.'",
+            voice, language:"en-US"
+          }
+        }));
+        // Kickoff message (also forced prefix)
+        dc.send(JSON.stringify({
+          type:"response.create",
+          response:{
+            instructions:"Respond ONLY in English. Hello, VoxTalk is ready in English.",
+            modalities:["audio","text"]
+          }
+        }));
+      };
+
+      // Button toggle
+      pttBtn.onclick = ()=>{
+        talking = !talking;
+        pttBtn.classList.toggle("listening", talking);
+        appendLine("me", talking ? "(Listening…)" : "(Stopped)");
+        micStream.getTracks()[0].enabled = talking;
+      };
+    }
+    initRealtime();
+  </script>
+</body>
+</html>
