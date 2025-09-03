@@ -29,6 +29,8 @@
     .text { color:#111; font-weight:normal; }
     .muted { color:#777; font-style:italic; }
   </style>
+  <!-- Load franc-min -->
+  <script src="https://cdn.jsdelivr.net/npm/franc-min@6.1.0/index.min.js"></script>
 </head>
 <body>
   <div class="app">
@@ -54,9 +56,10 @@
       answerEl.scrollTop = answerEl.scrollHeight;
     }
 
-    // Simple English check (blocks accented characters etc.)
+    // Use franc-min for detection
     function isEnglish(str) {
-      return /^[A-Za-z0-9\s.,!?'"-]+$/.test(str);
+      const lang = franc(str || "", { minLength: 2 });
+      return lang === "eng";
     }
 
     async function initRealtime() {
@@ -73,7 +76,7 @@
           if (evt.type==="response.message.delta") {
             const chunk = evt.delta.map(d=>d.content?.[0]?.text||"").join("");
             if (chunk) {
-              // ✅ Enforce English output
+              // ✅ Validate output
               if (!isEnglish(chunk)) {
                 appendLine("ai","[Sorry, English only.]");
               } else {
@@ -110,11 +113,11 @@
         dc.send(JSON.stringify({
           type:"session.update",
           session:{
-            instructions:"Always respond ONLY in English. If asked to speak Spanish or another language, reply in English: 'Sorry, English only.'",
+            instructions:"Always respond ONLY in English. If asked or spoken to in another language, reply in English: 'Sorry, English only.'",
             voice, language:"en-US"
           }
         }));
-        // Kickoff message (also forced prefix)
+        // Kickoff
         dc.send(JSON.stringify({
           type:"response.create",
           response:{
