@@ -63,4 +63,9 @@ wss.on("connection", async (client) => {
 // Session for OpenAI Realtime
 app.post("/session", (req, res) => {
   res.json({
-    client_secret: { value: process.env_
+    client_secret: { value: process.env.OPENAI_API_KEY || "fake-token" },
+    model: "gpt-4o-realtime-preview",
+    voice: "verse",
+    language: "en-US"
+  });
+});
