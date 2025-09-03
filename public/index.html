@@ -56,9 +56,10 @@
       answerEl.scrollTop = answerEl.scrollHeight;
     }
 
-    // Use franc-min for detection
+    // Language detection via franc-min
     function isEnglish(str) {
-      const lang = franc(str || "", { minLength: 2 });
+      if (!str || str.trim().length < 2) return true; // ignore very short
+      const lang = franc(str, { minLength: 2 });
       return lang === "eng";
     }
 
@@ -76,7 +77,7 @@
           if (evt.type==="response.message.delta") {
             const chunk = evt.delta.map(d=>d.content?.[0]?.text||"").join("");
             if (chunk) {
-              // ✅ Validate output
+              // 🔒 Output hard lock
               if (!isEnglish(chunk)) {
                 appendLine("ai","[Sorry, English only.]");
               } else {
@@ -84,7 +85,7 @@
               }
             }
           }
-        } catch{}
+        } catch {}
       };
 
       micStream = await navigator.mediaDevices.getUserMedia({ audio:true });
@@ -134,6 +135,24 @@
         appendLine("me", talking ? "(Listening…)" : "(Stopped)");
         micStream.getTracks()[0].enabled = talking;
       };
+
+      // Extra: intercept mic text (simulated transcript if you add STT later)
+      // Example hook if Deepgram or Whisper sends text here:
+      /*
+      function handleTranscript(text) {
+        if (!isEnglish(text)) {
+          appendLine("ai","[Sorry, English only.]");
+        } else if (dc && dc.readyState === "open") {
+          dc.send(JSON.stringify({
+            type:"response.create",
+            response:{
+              instructions:"Respond ONLY in English. " + text,
+              modalities:["audio","text"]
+            }
+          }));
+        }
+      }
+      */
     }
     initRealtime();
   </script>
