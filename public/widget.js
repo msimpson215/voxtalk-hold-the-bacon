@@ -1,7 +1,7 @@
 (function(){
-  const BASE = (window.VT_BASE || location.origin);  // works standalone or when embedded elsewhere
+  const BASE = (window.VT_BASE || location.origin);  // works standalone or embedded
 
-  // ---- Shadow UI (prevents CSS clashes) ----
+  // ---- Shadow UI ----
   const host = document.createElement('div'); document.body.appendChild(host);
   const root = host.attachShadow({mode:'open'});
   const css = document.createElement('style');
@@ -30,9 +30,8 @@
     </div>
     <div id="s" class="vt-mini">Tap Speak. First time will ask for mic permission.</div>
     <div class="vt-row">
-      <button id="speak" class="vt-primary">🎙️ Speak</button>
+      <button id="speak" class="vt-primary">Speak</button>
       <button id="stop" class="vt-danger" style="display:none">⏹ Stop</button>
-      <button id="resume" class="vt-ghost" style="display:none">▶️ Resume</button>
     </div>
     <div class="vt-row"><button id="typeDemo" class="vt-ghost">Ask “What is Lightship RV?”</button></div>
     <div id="a" class="vt-answer" style="margin-top:10px;"></div>
@@ -50,117 +49,58 @@
   const btnClose = $('x');
   const btnSpeak = $('speak');
   const btnStop = $('stop');
-  const btnResume = $('resume');
   const btnTypeDemo = $('typeDemo');
   const statusEl = $('s');
   const answerEl = $('a');
 
   const player = new Audio();
-  let rec = null, fetchAbort = null, audioPrimed = false;
+  let micStream, dgSocket;
 
   function showPanel(v){ panel.style.display = v ? 'block' : 'none'; }
   btnOpen.onclick = () => showPanel(true);
   btnClose.onclick = () => showPanel(false);
 
-  async function primeAudio(){
-    if (audioPrimed) return;
-    try {
-      const AC = window.AudioContext || window.webkitAudioContext;
-      const ctx = new AC();
-      const src = ctx.createBufferSource();
-      src.buffer = ctx.createBuffer(1,1,22050);
-      src.connect(ctx.destination);
-      src.start();
-      audioPrimed = true;
-    } catch {}
-  }
-
   function setBusy(msg){ statusEl.textContent = msg; }
 
-  function stopSpeech(keepPos=true){
-    if (fetchAbort) { try{fetchAbort.abort();}catch{} fetchAbort=null; }
-    try { player.pause(); } catch {}
-    if (!keepPos) player.currentTime = 0;
-    btnStop.style.display = 'none';
-    btnResume.style.display = 'inline-block';
-    setBusy('Paused.');
-  }
-  btnStop.onclick = () => stopSpeech(true);
-  btnResume.onclick = async () => {
-    try { await player.play(); btnStop.style.display='inline-block'; btnResume.style.display='none'; setBusy('Speaking…'); } catch {}
-  };
-  player.onended = () => { btnStop.style.display='none'; btnResume.style.display='none'; setBusy('Ready.'); };
-
-  function initRecognition(){
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if(!SR) return null;
-    const r = new SR();
-    r.lang='en-US'; r.interimResults=false; r.continuous=false; r.maxAlternatives=1;
-    r.onstart  = () => setBusy('Listening…');
-    r.onerror  = e => setBusy('Mic error: ' + (e?.error || e));
-    r.onresult = async (e)=>{
-      const said = e.results?.[0]?.[0]?.transcript || '';
-      if (!said.trim()) { setBusy('No speech detected.'); return; }
-      await askAndSpeak(said);
-    };
-    return r;
-  }
-
   async function speakText(text){
-    await primeAudio();
-    // keep short for fast TTS start
-    const short = text.split(/(?<=[.!?])\s+/).slice(0,2).join(' ').slice(0,380) || text;
-    try{
-      fetchAbort = new AbortController();
-      btnStop.style.display='inline-block'; btnResume.style.display='none';
-      setBusy('Generating speech…');
+    try {
+      setBusy("Generating speech…");
       const r = await fetch(`${BASE}/tts`, {
         method:'POST',
         headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ text: short }),
-        signal: fetchAbort.signal
+        body: JSON.stringify({ text })
       });
-      if(!r.ok){ const t = await r.text().catch(()=> ''); throw new Error(`TTS ${r.status} ${t}`); }
       const blob = await r.blob();
       const url = URL.createObjectURL(blob);
       player.src = url;
       await player.play();
-      setBusy('Speaking…');
-    } catch(e){
-      if (e.name === 'AbortError') setBusy('Stopped.');
-      else { setBusy('TTS error'); console.error(e); }
-    } finally { fetchAbort = null; }
+      setBusy("Speaking…");
+    } catch(e){ setBusy("TTS error"); console.error(e); }
   }
 
   async function askAndSpeak(message){
-    setBusy('Thinking…');
-    answerEl.textContent = '';
-    try{
+    setBusy("Thinking…");
+    answerEl.textContent = "";
+    try {
       const r = await fetch(`${BASE}/chat`, {
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
         body: JSON.stringify({ message, concise:true })
       });
       const data = await r.json();
       const text = data?.choices?.[0]?.message?.content || data?.error || JSON.stringify(data,null,2);
       answerEl.textContent = text;
-      setBusy('Answer ready.');
+      setBusy("Answer ready.");
       await speakText(text);
     } catch(e){
-      answerEl.textContent = 'Error: ' + (e?.message || e);
-      setBusy('Error.');
+      answerEl.textContent = "Error: " + (e?.message || e);
+      setBusy("Error.");
     }
   }
 
-  btnSpeak.onclick = async () => {
-    await primeAudio();
-    if (!rec) rec = initRecognition();
-    if (!rec) { setBusy('Speech recognition not supported.'); return; }
-    try { rec.start(); } catch { setBusy('Could not start mic.'); }
-  };
+  btnTypeDemo.onclick = () => askAndSpeak("What is Lightship RV?");
 
-  btnTypeDemo.onclick = () => askAndSpeak('What is Lightship RV?');
-
-  // Minimal API to open/close from page links
-  window.VT_WIDGET = { open(){ showPanel(true); }, close(){ showPanel(false); } };
-})();
+  // ---- Deepgram Streaming ----
+  async function startDeepgram(){
+    try {
+      micStream = await navigator.mediaDevices.getUserMedia({ audio:tr
