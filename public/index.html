@@ -5,23 +5,29 @@
   <title>VoxTalk - HoldTheBacon</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    body { margin:0; font-family:system-ui,sans-serif;
+    body {
+      margin:0; font-family:system-ui,sans-serif;
       display:grid; place-items:center; min-height:100vh;
       background: radial-gradient(circle at 50% 20%, #dbeafe, #93c5fd 40%, #1e3a8a 90%);
     }
     .app { text-align:center; max-width:600px; }
     h1 { margin:6px 0; font-size:22px; color:white; text-shadow:0 1px 3px #000; }
-    #pttBtn { width:120px; height:120px; border-radius:50%; border:none; cursor:pointer;
+    #pttBtn {
+      width:120px; height:120px; border-radius:50%; border:none; cursor:pointer;
       background: radial-gradient(circle at 30% 30%, #3b82f6, #1e40af);
-      box-shadow:0 6px 18px rgba(37,99,235,.3); transition: transform 0.15s ease; }
+      box-shadow:0 6px 18px rgba(37,99,235,.3); transition: transform 0.15s ease;
+    }
     #pttBtn.listening { animation: pulse 1.6s ease-in-out infinite; }
     @keyframes pulse {
       0% { box-shadow:0 0 0 0 rgba(59,130,246,.7); }
       50% { box-shadow:0 0 0 20px rgba(59,130,246,0); }
       100% { box-shadow:0 0 0 0 rgba(59,130,246,0); }
     }
-    #answer { margin-top:20px; padding:12px; border:1px solid #ccc;
-      border-radius:8px; background:white; min-height:80px; text-align:left; font-size:14px; }
+    #answer {
+      margin-top:20px; padding:12px; border:1px solid #ccc;
+      border-radius:8px; background:white; min-height:80px;
+      text-align:left; font-size:14px;
+    }
     .line { margin:6px 0; }
     .me { color:#2563eb; font-weight:600; }
     .ai { color:#065f46; font-weight:600; }
@@ -36,82 +42,6 @@
     <div id="answer"><div class="muted">Conversation will appear here.</div></div>
     <audio id="remote" autoplay playsinline></audio>
   </div>
-
-  <script>
-    const pttBtn = document.getElementById("pttBtn");
-    const answerEl = document.getElementById("answer");
-    const rtAudio = document.getElementById("remote");
-    let talking = false, dc;
-
-    function appendLine(role, text) {
-      if (answerEl.querySelector(".muted")) answerEl.innerHTML = "";
-      const div = document.createElement("div");
-      div.className = "line";
-      div.innerHTML = `<span class="${role}">${role==="me"?"You:":"AI:"}</span>
-                       <span class="text">${text}</span>`;
-      answerEl.appendChild(div);
-      answerEl.scrollTop = answerEl.scrollHeight;
-    }
-
-    async function initRealtime() {
-      const s = await fetch("/session",{method:"POST"});
-      const { client_secret, model, voice, language } = await s.json();
-
-      const pc = new RTCPeerConnection({
-        iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
-      });
-      pc.ontrack = (ev)=>{ rtAudio.srcObject = ev.streams[0]; };
-
-      dc = pc.createDataChannel("events");
-      dc.onmessage = (e)=>{
-        try {
-          const evt = JSON.parse(e.data);
-          if (evt.type==="response.message.delta") {
-            const chunk = evt.delta.map(d=>d.content?.[0]?.text||"").join("");
-            if (chunk) appendLine("ai",chunk);
-          }
-        } catch{}
-      };
-
-      const offer = await pc.createOffer({ offerToReceiveAudio:true });
-      await pc.setLocalDescription(offer);
-
-      const r = await fetch(
-        `https://api.openai.com/v1/realtime?model=${encodeURIComponent(model)}&voice=${voice}&language=${language}`,
-        {
-          method:"POST",
-          headers:{
-            "Authorization":`Bearer ${client_secret.value}`,
-            "Content-Type":"application/sdp"
-          },
-          body: offer.sdp
-        }
-      );
-      const answer = {type:"answer", sdp: await r.text()};
-      await pc.setRemoteDescription(answer);
-
-      dc.onopen = () => {
-        dc.send(JSON.stringify({
-          type:"session.update",
-          session:{
-            instructions:"Always respond ONLY in English. If user speaks another language, reply: 'Sorry, English only.'",
-            voice, language:"en-US"
-          }
-        }));
-      };
-
-      // 🎙 Mic → OpenAI
-      const stream = await navigator.mediaDevices.getUserMedia({ audio:true });
-      stream.getTracks().forEach(track => pc.addTrack(track, stream));
-    }
-
-    pttBtn.onclick = ()=>{
-      talking = !talking;
-      pttBtn.classList.toggle("listening", talking);
-      appendLine("me", talking ? "(Listening…)" : "(Stopped)");
-    };
-
-    initRealtime();
-  </script>
+  <script src="client.js"></script>
 </body>
 </html>
