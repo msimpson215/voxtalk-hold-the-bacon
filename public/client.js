@@ -33,12 +33,15 @@ async function initRealtime() {
   dc.onopen = () => console.log("✅ DataChannel open to OpenAI");
 
   dc.onmessage = (e) => {
-    console.log("📩 RAW MESSAGE FROM OPENAI:", e.data); // 👈 new debug line
+    console.log("📩 RAW MESSAGE FROM OPENAI:", e.data);
     try {
       const evt = JSON.parse(e.data);
       if (evt.type === "response.message.delta") {
         const chunk = evt.delta.map(d => d.content?.[0]?.text || "").join("");
-        if (chunk) appendLine("ai", chunk);
+        if (chunk) {
+          console.log("📝 OpenAI text delta:", chunk);
+          appendLine("ai", chunk);
+        }
       }
     } catch (err) {
       console.error("Message parse error:", err);
@@ -79,6 +82,7 @@ async function initRealtime() {
 
   dgSocket.onopen = () => console.log("✅ Deepgram socket open");
   dgSocket.onmessage = (msg) => {
+    console.log("📩 RAW FROM DEEPGRAM:", msg.data); // log everything
     try {
       const data = JSON.parse(msg.data);
       const transcript = data.channel?.alternatives?.[0]?.transcript;
@@ -96,12 +100,14 @@ async function initRealtime() {
   };
 }
 
+// 4. Button handler
 pttBtn.onclick = () => {
   talking = !talking;
   pttBtn.classList.toggle("listening", talking);
   appendLine("me", talking ? "(Listening…)" : "(Stopped)");
 };
 
+// 5. Start everything
 async function init() {
   try {
     await initRealtime();
