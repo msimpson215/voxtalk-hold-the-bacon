@@ -2,40 +2,47 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>VoxTalk - HoldTheBacon</title>
+  <title>VoxTalk</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     body {
-      margin:0; font-family:system-ui,sans-serif;
-      display:grid; place-items:center; min-height:100vh;
-      background: radial-gradient(circle at 50% 20%, #dbeafe, #93c5fd 40%, #1e3a8a 90%);
+      font-family: sans-serif;
+      background: #f9f9f9;
+      color: #333;
+      margin: 0; padding: 20px;
+      display: flex; flex-direction: column; align-items: center;
     }
-    .app { text-align:center; max-width:600px; }
-    h1 { margin:6px 0; font-size:22px; color:white; text-shadow:0 1px 3px #000; }
     #pttBtn {
-      padding:10px 18px; border:none; cursor:pointer; border-radius:8px;
-      background:#3b82f6; color:white; font-weight:600;
-      box-shadow:0 4px 12px rgba(37,99,235,.3);
+      background: #007bff;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 8px;
+      font-size: 16px;
+      cursor: pointer;
+      margin-bottom: 20px;
     }
     #answer {
-      margin-top:20px; padding:12px; border:1px solid #ccc;
-      border-radius:8px; background:white; min-height:80px;
-      text-align:left; font-size:14px;
+      width: 100%;
+      max-width: 600px;
+      height: 300px;
+      overflow-y: auto;
+      background: white;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      padding: 10px;
     }
-    .line { margin:6px 0; }
-    .me { color:#2563eb; font-weight:600; }
-    .ai { color:#065f46; font-weight:600; }
-    .text { color:#111; font-weight:normal; }
-    .muted { color:#777; font-style:italic; }
+    .line { margin: 4px 0; }
+    .line .me { color: #007bff; font-weight: bold; }
+    .line .ai { color: #28a745; font-weight: bold; }
+    audio { margin-top: 20px; width: 100%; }
   </style>
 </head>
 <body>
-  <div class="app">
-    <h1>Talk to VoxTalk</h1>
-    <button id="pttBtn">Talk</button>
-    <div id="answer"><div class="muted">Conversation will appear here.</div></div>
-    <audio id="remote" autoplay playsinline></audio>
-  </div>
+  <button id="pttBtn">🎤 Talk</button>
+  <div id="answer"><div class="muted">(waiting…)</div></div>
+  <audio id="remote" autoplay controls></audio>
+
   <script src="client.js"></script>
 </body>
 </html>
