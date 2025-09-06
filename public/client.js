@@ -30,7 +30,19 @@ async function initRealtime() {
   };
 
   dc = pc.createDataChannel("events");
-  dc.onopen = () => console.log("✅ DataChannel open to OpenAI");
+  dc.onopen = () => {
+    console.log("✅ DataChannel open to OpenAI");
+    // 🔧 Surgical fix: force English audio output
+    dc.send(JSON.stringify({
+      type:"session.update",
+      session:{
+        instructions:"Always respond in English with spoken audio. Do not transcribe background sounds. Reply as if you are talking directly to the user.",
+        voice:"verse",        // force your preferred voice
+        language:"en-US",     // lock English
+        modalities:["audio"]  // force audio output, not transcripts
+      }
+    }));
+  };
 
   dc.onmessage = (e) => {
     console.log("📩 RAW MESSAGE FROM OPENAI:", e.data);
@@ -75,14 +87,14 @@ async function initRealtime() {
   const mediaRecorder = new MediaRecorder(stream, { mimeType:"audio/webm;codecs=opus" });
   mediaRecorder.ondataavailable = (e) => {
     if (e.data.size > 0 && dgSocket.readyState === WebSocket.OPEN) {
-      dgSocket.send(e.data); // rollback: send blob directly (like when it worked before)
+      dgSocket.send(e.data); // rollback: send blob directly
     }
   };
   mediaRecorder.start(250);
 
   dgSocket.onopen = () => console.log("✅ Deepgram socket open");
   dgSocket.onmessage = (msg) => {
-    console.log("📩 RAW FROM DEEPGRAM:", msg.data); // log everything
+    console.log("📩 RAW FROM DEEPGRAM:", msg.data);
     try {
       const data = JSON.parse(msg.data);
       const transcript = data.channel?.alternatives?.[0]?.transcript;
