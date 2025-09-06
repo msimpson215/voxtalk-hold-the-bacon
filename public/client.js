@@ -32,14 +32,13 @@ async function initRealtime() {
   dc = pc.createDataChannel("events");
   dc.onopen = () => {
     console.log("✅ DataChannel open to OpenAI");
-    // 🔧 Surgical fix: force English audio output
+    // 🔧 Force English audio-only replies
     dc.send(JSON.stringify({
       type:"session.update",
       session:{
-        instructions:"Always respond in English with spoken audio. Do not transcribe background sounds. Reply as if you are talking directly to the user.",
-        voice:"verse",        // force your preferred voice
-        language:"en-US",     // lock English
-        modalities:["audio"]  // force audio output, not transcripts
+        instructions: "Always respond in English with spoken audio only. Do not transcribe or send background noises. Talk directly to the user.",
+        voice:"verse",
+        modalities:["audio"] // no transcripts, just audio
       }
     }));
   };
@@ -64,7 +63,7 @@ async function initRealtime() {
   await pc.setLocalDescription(offer);
 
   const r = await fetch(
-    `https://api.openai.com/v1/realtime?model=${encodeURIComponent(model)}&voice=${voice}&language=en-US`,
+    `https://api.openai.com/v1/realtime?model=${encodeURIComponent(model)}&voice=${voice}`,
     {
       method:"POST",
       headers:{
@@ -87,7 +86,7 @@ async function initRealtime() {
   const mediaRecorder = new MediaRecorder(stream, { mimeType:"audio/webm;codecs=opus" });
   mediaRecorder.ondataavailable = (e) => {
     if (e.data.size > 0 && dgSocket.readyState === WebSocket.OPEN) {
-      dgSocket.send(e.data); // rollback: send blob directly
+      dgSocket.send(e.data);
     }
   };
   mediaRecorder.start(250);
