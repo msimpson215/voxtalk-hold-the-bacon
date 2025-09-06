@@ -32,13 +32,13 @@ async function initRealtime() {
   dc = pc.createDataChannel("events");
   dc.onopen = () => {
     console.log("✅ DataChannel open to OpenAI");
-    // 🔧 Force English audio-only replies
+    // Lock OpenAI: English, audio only
     dc.send(JSON.stringify({
       type:"session.update",
       session:{
-        instructions: "Always respond in English with spoken audio only. Do not transcribe or send background noises. Talk directly to the user.",
+        instructions: "Always respond in English with spoken audio only. Do not send transcripts. Talk directly to the user.",
         voice:"verse",
-        modalities:["audio"] // no transcripts, just audio
+        modalities:["audio"]
       }
     }));
   };
@@ -78,17 +78,21 @@ async function initRealtime() {
 
   // 3. --- Mic → Deepgram ---
   const stream = await navigator.mediaDevices.getUserMedia({ audio:true });
+
+  // Force opus in webm (Deepgram requirement)
+  const mediaRecorder = new MediaRecorder(stream, { mimeType:"audio/webm;codecs=opus" });
+
   const dgSocket = new WebSocket(
     "wss://api.deepgram.com/v1/listen?model=nova&language=en",
     ["token", deepgramKey]
   );
 
-  const mediaRecorder = new MediaRecorder(stream, { mimeType:"audio/webm;codecs=opus" });
   mediaRecorder.ondataavailable = (e) => {
     if (e.data.size > 0 && dgSocket.readyState === WebSocket.OPEN) {
       dgSocket.send(e.data);
     }
   };
+
   mediaRecorder.start(250);
 
   dgSocket.onopen = () => console.log("✅ Deepgram socket open");
@@ -111,7 +115,7 @@ async function initRealtime() {
   };
 }
 
-// Button handler (simple, no pulsing mic)
+// Button handler
 pttBtn.onclick = () => {
   talking = !talking;
   appendLine("me", talking ? "(Listening…)" : "(Stopped)");
