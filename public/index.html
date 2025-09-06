@@ -115,11 +115,12 @@
         console.log("📩 Deepgram raw:", msg.data);
         try {
           const data = JSON.parse(msg.data);
-          const transcript = data.channel?.alternatives?.[0]?.transcript;
-          if (transcript && transcript.length > 0) {
-            console.log("🎤 Transcript:", transcript);
+          const alt = data.channel?.alternatives?.[0];
+          const transcript = alt?.transcript;
+          // ✅ Only act if transcript has words AND is_final
+          if (transcript && transcript.length > 0 && data.is_final) {
+            console.log("🎤 Final transcript:", transcript);
             appendLine("me", transcript);
-            // Send to OpenAI
             dc.send(JSON.stringify({
               type:"response.create",
               response:{ instructions: transcript }
