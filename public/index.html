@@ -101,17 +101,9 @@
       // Deepgram uses the SAME mic track
       const dgStream = new MediaStream([micTrack]);
 
-      // Force Opus codec with fallback
-      let mime;
-      if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) {
-        mime = "audio/webm;codecs=opus";
-      } else if (MediaRecorder.isTypeSupported("audio/ogg;codecs=opus")) {
-        mime = "audio/ogg;codecs=opus";
-      } else {
-        alert("❌ No supported Opus codec in this browser.");
-        return;
-      }
-      console.log("🎙️ Using mime:", mime);
+      // Force OGG/Opus only
+      const mime = "audio/ogg;codecs=opus";
+      console.log("🎙️ Using forced mime:", mime);
 
       const dgSocket = new WebSocket(
         "wss://api.deepgram.com/v1/listen?model=nova&language=en",
