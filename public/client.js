@@ -75,7 +75,7 @@ async function initRealtime() {
   const mediaRecorder = new MediaRecorder(stream, { mimeType:"audio/webm;codecs=opus" });
   mediaRecorder.ondataavailable = (e) => {
     if (e.data.size > 0 && dgSocket.readyState === WebSocket.OPEN) {
-      dgSocket.send(e.data);
+      dgSocket.send(e.data); // rollback: send blob directly (like when it worked before)
     }
   };
   mediaRecorder.start(250);
@@ -100,14 +100,13 @@ async function initRealtime() {
   };
 }
 
-// 4. Button handler
+// Button handler (simple, no pulsing mic)
 pttBtn.onclick = () => {
   talking = !talking;
-  pttBtn.classList.toggle("listening", talking);
   appendLine("me", talking ? "(Listening…)" : "(Stopped)");
 };
 
-// 5. Start everything
+// Start
 async function init() {
   try {
     await initRealtime();
