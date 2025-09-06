@@ -17,12 +17,6 @@
       background: radial-gradient(circle at 30% 30%, #3b82f6, #1e40af);
       box-shadow:0 6px 18px rgba(37,99,235,.3);
     }
-    #pttBtn.listening { animation: pulse 1.5s infinite; }
-    @keyframes pulse {
-      0% { box-shadow:0 0 0 0 rgba(37,99,235,.7); }
-      70% { box-shadow:0 0 0 25px rgba(37,99,235,0); }
-      100% { box-shadow:0 0 0 0 rgba(37,99,235,0); }
-    }
     #answer {
       margin-top:20px; padding:12px; border:1px solid #ccc;
       border-radius:8px; background:white; min-height:120px;
@@ -61,7 +55,7 @@
       const s = await fetch("/session", { method:"POST" });
       const { client_secret, model, voice, deepgramKey } = await s.json();
 
-      // OpenAI Realtime connection
+      // --- OpenAI Realtime setup (unchanged) ---
       const pc = new RTCPeerConnection();
       pc.ontrack = (ev)=> { rtAudio.srcObject = ev.streams[0]; };
 
@@ -70,7 +64,7 @@
         dc.send(JSON.stringify({
           type:"session.update",
           session:{
-            instructions:"Always respond in English with spoken audio only. Never switch languages. Reply conversationally in English.",
+            instructions:"Always respond in English with spoken audio only. Never switch languages.",
             voice:"verse",
             modalities:["audio"]
           }
@@ -99,32 +93,36 @@
       const answer = { type:"answer", sdp: await r.text() };
       await pc.setRemoteDescription(answer);
 
-      // Mic → Deepgram
+      // --- Mic → Deepgram surgical fix ---
       const stream = await navigator.mediaDevices.getUserMedia({ audio:true });
+
+      // Force Opus codec with fallback
+      let mime;
+      if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) {
+        mime = "audio/webm;codecs=opus";
+      } else if (MediaRecorder.isTypeSupported("audio/ogg;codecs=opus")) {
+        mime = "audio/ogg;codecs=opus";
+      } else {
+        alert("❌ No supported Opus codec in this browser.");
+        return;
+      }
+      console.log("🎙️ Using mime:", mime);
+
       const dgSocket = new WebSocket(
         "wss://api.deepgram.com/v1/listen?model=nova&language=en",
         ["token", deepgramKey]
       );
 
-      // Try webm/opus first, fallback to ogg/opus if needed
-      let mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-        ? "audio/webm;codecs=opus"
-        : "audio/ogg;codecs=opus";
-
-      const mediaRecorder = new MediaRecorder(stream, { mimeType: mime });
-      mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0 && dgSocket.readyState === WebSocket.OPEN) {
-          dgSocket.send(e.data);
-        }
-      };
-      mediaRecorder.start(250);
-
+      dgSocket.onopen = () => console.log("✅ Deepgram socket open");
       dgSocket.onmessage = (msg) => {
+        console.log("📩 Deepgram raw:", msg.data);
         try {
           const data = JSON.parse(msg.data);
           const transcript = data.channel?.alternatives?.[0]?.transcript;
           if (transcript && transcript.length > 0) {
+            console.log("🎤 Transcript:", transcript);
             appendLine("me", transcript);
+            // Send to OpenAI
             dc.send(JSON.stringify({
               type:"response.create",
               response:{ instructions: transcript }
@@ -133,11 +131,19 @@
         } catch {}
       };
 
-      // Button handler
+      // Recorder with 250ms chunks
+      const mediaRecorder = new MediaRecorder(stream, { mimeType: mime });
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0 && dgSocket.readyState === WebSocket.OPEN) {
+          dgSocket.send(e.data);
+        }
+      };
+      mediaRecorder.start(250);
+
+      // Button just logs state for now
       let talking = false;
       pttBtn.onclick = () => {
         talking = !talking;
-        pttBtn.classList.toggle("listening", talking);
         appendLine("me", talking ? "(Listening…)" : "(Stopped)");
       };
     }
