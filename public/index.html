@@ -55,7 +55,7 @@
       const s = await fetch("/session", { method:"POST" });
       const { client_secret, model, voice, deepgramKey } = await s.json();
 
-      // --- OpenAI Realtime setup (unchanged) ---
+      // --- OpenAI Realtime setup ---
       const pc = new RTCPeerConnection();
       pc.ontrack = (ev)=> { rtAudio.srcObject = ev.streams[0]; };
 
@@ -93,8 +93,13 @@
       const answer = { type:"answer", sdp: await r.text() };
       await pc.setRemoteDescription(answer);
 
-      // --- Mic → Deepgram surgical fix ---
+      // --- Mic capture ---
       const stream = await navigator.mediaDevices.getUserMedia({ audio:true });
+      const micTrack = stream.getTracks()[0];
+      pc.addTrack(micTrack, stream);
+
+      // Deepgram uses the SAME mic track
+      const dgStream = new MediaStream([micTrack]);
 
       // Force Opus codec with fallback
       let mime;
@@ -131,16 +136,17 @@
         } catch {}
       };
 
-      // Recorder with 250ms chunks
-      const mediaRecorder = new MediaRecorder(stream, { mimeType: mime });
+      // Recorder on SAME mic track
+      const mediaRecorder = new MediaRecorder(dgStream, { mimeType: mime });
       mediaRecorder.ondataavailable = (e) => {
+        console.log("🎙️ Blob size:", e.data.size);
         if (e.data.size > 0 && dgSocket.readyState === WebSocket.OPEN) {
           dgSocket.send(e.data);
         }
       };
       mediaRecorder.start(250);
 
-      // Button just logs state for now
+      // Button just logs state
       let talking = false;
       pttBtn.onclick = () => {
         talking = !talking;
