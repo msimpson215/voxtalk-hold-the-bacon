@@ -19,11 +19,9 @@ app.post("/session", async (req, res) => {
     const model = "gpt-4o-realtime-preview";
     const voice = "verse";
     const openaiKey = process.env.OPENAI_API_KEY;
-    const deepgramKey = process.env.DEEPGRAM_API_KEY;
 
-    if (!openaiKey || !deepgramKey) {
-      console.error("❌ Missing API keys");
-      return res.status(500).json({ error: "API keys missing" });
+    if (!openaiKey) {
+      return res.status(500).json({ error: "Missing OPENAI_API_KEY" });
     }
 
     const r = await fetch("https://api.openai.com/v1/realtime/sessions", {
@@ -36,20 +34,11 @@ app.post("/session", async (req, res) => {
     });
 
     const data = await r.json();
-    res.json({
-      client_secret: data.client_secret,
-      model,
-      voice,
-      deepgramKey,
-    });
+    res.json({ client_secret: data.client_secret, model, voice });
   } catch (err) {
     console.error("Session error:", err);
     res.status(500).send("Failed to create session");
   }
-});
-
-app.get("/health", (req, res) => {
-  res.send("OK");
 });
 
 app.listen(PORT, () => {
