@@ -10,35 +10,15 @@
       display:grid; place-items:center; min-height:100vh;
       background:#111; color:#eee;
     }
-    .app { text-align:center; max-width:600px; }
     h1 { font-size:22px; }
-    #answer {
-      margin-top:20px; padding:12px; border:1px solid #444;
-      border-radius:8px; background:#222; min-height:120px;
-      font-size:14px; text-align:left; overflow-y:auto;
-    }
-    .me { color:#3b82f6; font-weight:600; }
-    .ai { color:#22c55e; font-weight:600; }
   </style>
 </head>
 <body>
-  <div class="app">
-    <h1>VoxTalk Minimal</h1>
-    <div id="answer"><div class="muted">Conversation will appear here.</div></div>
-    <audio id="remote" autoplay playsinline></audio>
-  </div>
+  <h1>VoxTalk Minimal</h1>
+  <audio id="remote" autoplay playsinline></audio>
 
   <script>
-    const answerEl = document.getElementById('answer');
-    const rtAudio  = document.getElementById('remote');
-
-    function appendLine(role, text) {
-      if (answerEl.querySelector('.muted')) answerEl.innerHTML = '';
-      const div = document.createElement('div');
-      div.innerHTML = `<span class="${role}">${role==='me'?'You:':'AI:'}</span> ${text}`;
-      answerEl.appendChild(div);
-      answerEl.scrollTop = answerEl.scrollHeight;
-    }
+    const rtAudio = document.getElementById('remote');
 
     async function initRealtime() {
       console.log("🔄 Fetching session...");
@@ -52,18 +32,31 @@
       const dc = pc.createDataChannel("events");
       dc.onopen = () => {
         console.log("📡 Data channel open");
+
+        // Force audio replies
+        dc.send(JSON.stringify({
+          type: "session.update",
+          session: {
+            instructions: "You are a helpful, talkative assistant. Always reply with spoken audio and English text.",
+            voice: "verse",
+            modalities: ["audio","text"]
+          }
+        }));
+
+        // Kick it off
         dc.send(JSON.stringify({
           type:"response.create",
           response:{ instructions:"Hello there, let's talk." }
         }));
       };
+
       dc.onmessage = (e)=> {
         console.log("📡 Raw event:", e.data);
         try {
           const evt = JSON.parse(e.data);
           if (evt.type === "response.message.delta") {
             const chunk = evt.delta.map(d=>d.content?.[0]?.text||"").join("");
-            if (chunk) appendLine("ai", chunk);
+            if (chunk) console.log("🧠 AI:", chunk);
           }
         } catch {}
       };
