@@ -57,7 +57,18 @@
       };
 
       const dc = pc.createDataChannel("events");
+
+      dc.onopen = () => {
+        console.log("📡 Data channel open");
+        // Kickstart with a hello
+        dc.send(JSON.stringify({
+          type:"response.create",
+          response:{ instructions:"Hello, can you hear me?" }
+        }));
+      };
+
       dc.onmessage = (e)=> {
+        console.log("📡 Raw event:", e.data);
         try {
           const evt = JSON.parse(e.data);
           if (evt.type === "response.message.delta") {
