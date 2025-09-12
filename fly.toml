@@ -1,4 +1,4 @@
-app = "voxtalk-safe"
+app = "voxtalk-hello"
 
 [build]
   dockerfile = "Dockerfile"
