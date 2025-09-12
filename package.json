@@ -1,5 +1,5 @@
 {
-  "name": "voxtalk-hold-the-bacon",
+  "name": "voxtalk-minimal",
   "version": "1.0.0",
   "type": "module",
   "main": "server/server.js",
