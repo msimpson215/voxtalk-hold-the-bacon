@@ -21,7 +21,6 @@ app.post("/session", async (req, res) => {
     const openaiKey = process.env.OPENAI_API_KEY;
     const deepgramKey = process.env.DEEPGRAM_API_KEY;
 
-    // Create a short-lived client_secret for OpenAI Realtime
     const r = await fetch("https://api.openai.com/v1/realtime/sessions", {
       method: "POST",
       headers: {
@@ -32,7 +31,6 @@ app.post("/session", async (req, res) => {
     });
 
     const data = await r.json();
-
     res.json({
       client_secret: data.client_secret,
       model,
