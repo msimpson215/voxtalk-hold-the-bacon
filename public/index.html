@@ -12,11 +12,6 @@
     }
     .app { text-align:center; max-width:600px; }
     h1 { margin:10px 0; font-size:22px; }
-    #pttBtn {
-      width:120px; height:120px; border-radius:50%; border:none; cursor:pointer;
-      background: radial-gradient(circle at 30% 30%, #3b82f6, #1e40af);
-      box-shadow:0 6px 18px rgba(37,99,235,.3);
-    }
     #answer {
       margin-top:20px; padding:12px; border:1px solid #ccc;
       border-radius:8px; background:white; min-height:120px;
@@ -30,14 +25,12 @@
 </head>
 <body>
   <div class="app">
-    <h1>Click to talk to VoxTalk</h1>
-    <button id="pttBtn">🎤</button>
+    <h1>VoxTalk Realtime</h1>
     <div id="answer"><div class="muted">Conversation will appear here.</div></div>
     <audio id="remote" autoplay playsinline></audio>
   </div>
 
   <script>
-    const pttBtn   = document.getElementById('pttBtn');
     const answerEl = document.getElementById('answer');
     const rtAudio  = document.getElementById('remote');
 
@@ -82,14 +75,12 @@
       const answer = { type:"answer", sdp: await r.text() };
       await pc.setRemoteDescription(answer);
 
+      // --- Mic capture + Deepgram ---
       const stream = await navigator.mediaDevices.getUserMedia({ audio:true });
       const micTrack = stream.getTracks()[0];
       pc.addTrack(micTrack, stream);
-
-      // Deepgram mic stream
       const dgStream = new MediaStream([micTrack]);
 
-      // --- Safe mime detection ---
       let mime;
       if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) {
         mime = "audio/webm;codecs=opus";
@@ -98,14 +89,12 @@
       } else {
         mime = "";
       }
-      console.log("🎙️ Using mime:", mime || "browser default");
 
       const dgSocket = new WebSocket(
         "wss://api.deepgram.com/v1/listen?model=nova&language=en",
         ["token", deepgramKey]
       );
 
-      dgSocket.onopen = () => console.log("✅ Deepgram socket open");
       dgSocket.onmessage = (msg) => {
         try {
           const data = JSON.parse(msg.data);
@@ -128,12 +117,6 @@
         }
       };
       mediaRecorder.start(250);
-
-      let talking = false;
-      pttBtn.onclick = () => {
-        talking = !talking;
-        appendLine("me", talking ? "(Listening…)" : "(Stopped)");
-      };
     }
 
     initRealtime();
