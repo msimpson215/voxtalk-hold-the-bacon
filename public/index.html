@@ -2,59 +2,14 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>VoxTalk Hello Voice</title>
+  <title>VoxTalk Hello + JS Check</title>
 </head>
 <body>
   <h1>Hello from VoxTalk 👋</h1>
   <p>If you can see this, the server and Fly are working.</p>
-  <audio id="remote" autoplay playsinline></audio>
 
   <script>
-    const rtAudio = document.getElementById('remote');
-
-    async function initRealtime() {
-      console.log("🔄 Fetching session...");
-      const s = await fetch("/session", { method:"POST" });
-      const { client_secret, model, voice } = await s.json();
-      console.log("✅ Got session keys");
-
-      const pc = new RTCPeerConnection();
-      pc.ontrack = (ev)=> { rtAudio.srcObject = ev.streams[0]; };
-
-      const dc = pc.createDataChannel("events");
-      dc.onopen = () => {
-        console.log("📡 Data channel open");
-
-        // Tell the AI to say hello
-        dc.send(JSON.stringify({
-          type:"response.create",
-          response:{
-            instructions:"Hello Marty, I'm here. Let's talk.",
-            modalities:["audio"],
-            voice:"verse"
-          }
-        }));
-      };
-
-      const offer = await pc.createOffer({ offerToReceiveAudio:true });
-      await pc.setLocalDescription(offer);
-
-      const r = await fetch(
-        `https://api.openai.com/v1/realtime?model=${encodeURIComponent(model)}&voice=${voice}`,
-        {
-          method:"POST",
-          headers:{
-            "Authorization":`Bearer ${client_secret.value}`,
-            "Content-Type":"application/sdp"
-          },
-          body: offer.sdp
-        }
-      );
-      const answer = { type:"answer", sdp: await r.text() };
-      await pc.setRemoteDescription(answer);
-    }
-
-    initRealtime().catch(err => console.error("🔥 initRealtime error:", err));
+    console.log("✅ JS is alive and running from index.html");
   </script>
 </body>
 </html>
