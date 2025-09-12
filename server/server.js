@@ -26,14 +26,31 @@ app.post("/session", async (req, res) => {
       return res.status(500).json({ error: "Missing OPENAI_API_KEY" });
     }
 
+   //  NOTE!! MARTY:  Directly below I commented out this section and added a change to it down below: the system instruction which tells OpenAI to never relpy in Spanish. See if this works.
+   //  you can revert this if it's breaking anything.  - Tim 
+
+   // const r = await fetch("https://api.openai.com/v1/realtime/sessions", {
+   //   method: "POST",
+   //   headers: {
+   //    Authorization: `Bearer ${openaiKey}`,
+   //     "Content-Type": "application/json"
+   //   },
+   //   body: JSON.stringify({ model, voice })
+   // });
+
     const r = await fetch("https://api.openai.com/v1/realtime/sessions", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${openaiKey}`,
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({ model, voice })
+      body: JSON.stringify({
+        model,
+        voice,
+        instructions: "You are an AI voice assistant. ALWAYS respond in English. Never default to Spanish. If the user speaks another language, translate it and reply only in English."
+      })
     });
+    
 
     const data = await r.json();
     res.json({ client_secret: data.client_secret, model, voice });
