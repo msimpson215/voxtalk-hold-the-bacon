@@ -1,7 +1,7 @@
 let micTrack; // keep a reference
 
 async function initRealtime() {
-  // ... existing setup code above ...
+  // ... session + peer connection setup ...
 
   // Get mic once, add track once
   const stream = await navigator.mediaDevices.getUserMedia({ audio:true });
