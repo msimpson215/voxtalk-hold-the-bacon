@@ -2,30 +2,28 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>VoxTalk</title>
+  <title>VoxTalk Minimal</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     body {
       margin:0; font-family:system-ui,sans-serif;
       display:grid; place-items:center; min-height:100vh;
-      background: radial-gradient(circle at 50% 20%, #dbeafe, #93c5fd 40%, #1e3a8a 90%);
+      background:#111; color:#eee;
     }
     .app { text-align:center; max-width:600px; }
-    h1 { margin:10px 0; font-size:22px; }
+    h1 { font-size:22px; }
     #answer {
-      margin-top:20px; padding:12px; border:1px solid #ccc;
-      border-radius:8px; background:white; min-height:120px;
+      margin-top:20px; padding:12px; border:1px solid #444;
+      border-radius:8px; background:#222; min-height:120px;
       font-size:14px; text-align:left; overflow-y:auto;
     }
-    .line { margin:6px 0; }
-    .me { color:#2563eb; font-weight:600; }
-    .ai { color:#065f46; font-weight:600; }
-    .text { color:#111; }
+    .me { color:#3b82f6; font-weight:600; }
+    .ai { color:#22c55e; font-weight:600; }
   </style>
 </head>
 <body>
   <div class="app">
-    <h1>VoxTalk Realtime</h1>
+    <h1>VoxTalk Minimal</h1>
     <div id="answer"><div class="muted">Conversation will appear here.</div></div>
     <audio id="remote" autoplay playsinline></audio>
   </div>
@@ -37,16 +35,16 @@
     function appendLine(role, text) {
       if (answerEl.querySelector('.muted')) answerEl.innerHTML = '';
       const div = document.createElement('div');
-      div.className = 'line';
-      div.innerHTML = `<span class="${role}">${role==='me'?'You:':'AI:'}</span>
-                       <span class="text">${text}</span>`;
+      div.innerHTML = `<span class="${role}">${role==='me'?'You:':'AI:'}</span> ${text}`;
       answerEl.appendChild(div);
       answerEl.scrollTop = answerEl.scrollHeight;
     }
 
     async function initRealtime() {
+      console.log("🔄 Fetching session...");
       const s = await fetch("/session", { method:"POST" });
-      const { client_secret, model, voice, deepgramKey } = await s.json();
+      const { client_secret, model, voice } = await s.json();
+      console.log("✅ Session ready");
 
       const pc = new RTCPeerConnection();
       pc.ontrack = (ev)=> { rtAudio.srcObject = ev.streams[0]; };
@@ -56,7 +54,7 @@
         console.log("📡 Data channel open");
         dc.send(JSON.stringify({
           type:"response.create",
-          response:{ instructions:"Hello, testing connection." }
+          response:{ instructions:"Hello there, let's talk." }
         }));
       };
       dc.onmessage = (e)=> {
@@ -72,6 +70,7 @@
 
       const offer = await pc.createOffer({ offerToReceiveAudio:true });
       await pc.setLocalDescription(offer);
+
       const r = await fetch(
         `https://api.openai.com/v1/realtime?model=${encodeURIComponent(model)}&voice=${voice}`,
         {
@@ -84,49 +83,8 @@
       await pc.setRemoteDescription(answer);
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio:true });
-      const micTrack = stream.getTracks()[0];
-      pc.addTrack(micTrack, stream);
-
-      const dgStream = new MediaStream([micTrack]);
-
-      let mime;
-      if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) {
-        mime = "audio/webm;codecs=opus";
-      } else if (MediaRecorder.isTypeSupported("audio/ogg;codecs=opus")) {
-        mime = "audio/ogg;codecs=opus";
-      } else {
-        mime = "";
-      }
-
-      const dgSocket = new WebSocket(
-        "wss://api.deepgram.com/v1/listen?model=nova&language=en",
-        ["token", deepgramKey]
-      );
-
-      dgSocket.onopen = () => console.log("✅ Deepgram socket open");
-      dgSocket.onmessage = (msg) => {
-        console.log("📩 Deepgram raw:", msg.data);
-        try {
-          const data = JSON.parse(msg.data);
-          const alt = data.channel?.alternatives?.[0];
-          const transcript = alt?.transcript;
-          if (transcript && transcript.length > 0 && data.is_final) {
-            appendLine("me", transcript);
-            dc.send(JSON.stringify({
-              type:"response.create",
-              response:{ instructions: transcript }
-            }));
-          }
-        } catch {}
-      };
-
-      const mediaRecorder = new MediaRecorder(dgStream, mime ? { mimeType: mime } : {});
-      mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0 && dgSocket.readyState === WebSocket.OPEN) {
-          dgSocket.send(e.data);
-        }
-      };
-      mediaRecorder.start(250);
+      stream.getTracks().forEach(track => pc.addTrack(track, stream));
+      console.log("🎙️ Mic capture started");
     }
 
     initRealtime().catch(err => console.error("🔥 initRealtime error:", err));
