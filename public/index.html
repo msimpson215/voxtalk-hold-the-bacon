@@ -55,21 +55,10 @@
       const s = await fetch("/session", { method:"POST" });
       const { client_secret, model, voice, deepgramKey } = await s.json();
 
-      // --- OpenAI Realtime setup ---
       const pc = new RTCPeerConnection();
       pc.ontrack = (ev)=> { rtAudio.srcObject = ev.streams[0]; };
 
       const dc = pc.createDataChannel("events");
-      dc.onopen = () => {
-        dc.send(JSON.stringify({
-          type:"session.update",
-          session:{
-            instructions:"Always respond in English with spoken audio only. Never switch languages.",
-            voice:"verse",
-            modalities:["audio"]
-          }
-        }));
-      };
       dc.onmessage = (e)=> {
         try {
           const evt = JSON.parse(e.data);
@@ -93,17 +82,23 @@
       const answer = { type:"answer", sdp: await r.text() };
       await pc.setRemoteDescription(answer);
 
-      // --- Mic capture ---
       const stream = await navigator.mediaDevices.getUserMedia({ audio:true });
       const micTrack = stream.getTracks()[0];
       pc.addTrack(micTrack, stream);
 
-      // Deepgram uses the SAME mic track
+      // Deepgram mic stream
       const dgStream = new MediaStream([micTrack]);
 
-      // Force OGG/Opus only
-      const mime = "audio/ogg;codecs=opus";
-      console.log("🎙️ Using forced mime:", mime);
+      // --- Safe mime detection ---
+      let mime;
+      if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) {
+        mime = "audio/webm;codecs=opus";
+      } else if (MediaRecorder.isTypeSupported("audio/ogg;codecs=opus")) {
+        mime = "audio/ogg;codecs=opus";
+      } else {
+        mime = "";
+      }
+      console.log("🎙️ Using mime:", mime || "browser default");
 
       const dgSocket = new WebSocket(
         "wss://api.deepgram.com/v1/listen?model=nova&language=en",
@@ -112,14 +107,11 @@
 
       dgSocket.onopen = () => console.log("✅ Deepgram socket open");
       dgSocket.onmessage = (msg) => {
-        console.log("📩 Deepgram raw:", msg.data);
         try {
           const data = JSON.parse(msg.data);
           const alt = data.channel?.alternatives?.[0];
           const transcript = alt?.transcript;
-          // ✅ Only act if transcript has words AND is_final
           if (transcript && transcript.length > 0 && data.is_final) {
-            console.log("🎤 Final transcript:", transcript);
             appendLine("me", transcript);
             dc.send(JSON.stringify({
               type:"response.create",
@@ -129,17 +121,14 @@
         } catch {}
       };
 
-      // Recorder on SAME mic track
-      const mediaRecorder = new MediaRecorder(dgStream, { mimeType: mime });
+      const mediaRecorder = new MediaRecorder(dgStream, mime ? { mimeType: mime } : {});
       mediaRecorder.ondataavailable = (e) => {
-        console.log("🎙️ Blob size:", e.data.size);
         if (e.data.size > 0 && dgSocket.readyState === WebSocket.OPEN) {
           dgSocket.send(e.data);
         }
       };
       mediaRecorder.start(250);
 
-      // Button just logs state
       let talking = false;
       pttBtn.onclick = () => {
         talking = !talking;
