@@ -1,5 +1,5 @@
 {
-  "name": "voxtalk-minimal",
+  "name": "voxtalk-safe",
   "version": "1.0.0",
   "type": "module",
   "main": "server/server.js",
