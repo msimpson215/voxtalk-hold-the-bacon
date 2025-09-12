@@ -21,7 +21,7 @@
 
   <script>
     const rtAudio = document.getElementById('remote');
-    let pc, dc, stream, timeoutId;
+    let pc, dc, micTrack, timeoutId;
 
     async function initRealtime() {
       console.log("🔄 Fetching session...");
@@ -35,14 +35,19 @@
       dc = pc.createDataChannel("events");
       dc.onopen = () => {
         console.log("📡 Data channel open");
+
+        // Force session to always reply, and allow interruption
         dc.send(JSON.stringify({
           type:"session.update",
           session:{
             voice:"verse",
             modalities:["audio","text"],
-            turn_detection:null
+            turn_detection:null,
+            interrupt_response:true   // 👈 interruptible
           }
         }));
+
+        // Kick it off
         dc.send(JSON.stringify({
           type:"response.create",
           response:{ instructions:"Hello! Hold spacebar to talk." }
@@ -74,22 +79,27 @@
       const answer = { type:"answer", sdp: await r.text() };
       await pc.setRemoteDescription(answer);
 
-      stream = await navigator.mediaDevices.getUserMedia({ audio:true });
-      console.log("🎙️ Mic ready (waiting for spacebar)");
+      const stream = await navigator.mediaDevices.getUserMedia({ audio:true });
+      micTrack = stream.getTracks()[0];
+      pc.addTrack(micTrack, stream);  // only once
+      micTrack.enabled = false;       // start muted
+      console.log("🎙️ Mic ready (spacebar to enable)");
     }
 
     function startTalking() {
-      if (!pc || !stream) return;
-      stream.getTracks().forEach(track => pc.addTrack(track, stream));
-      console.log("🎙️ Talking...");
-      timeoutId = setTimeout(stopTalking, 30000); // auto-stop after 30s
+      if (micTrack) {
+        micTrack.enabled = true;
+        console.log("🎙️ Talking...");
+        timeoutId = setTimeout(stopTalking, 30000); // auto-stop after 30s
+      }
     }
 
     function stopTalking() {
-      if (!pc) return;
-      pc.getSenders().forEach(sender => pc.removeTrack(sender));
-      if (timeoutId) clearTimeout(timeoutId);
-      console.log("🔇 Mic stopped");
+      if (micTrack) {
+        micTrack.enabled = false;
+        if (timeoutId) clearTimeout(timeoutId);
+        console.log("🔇 Mic stopped");
+      }
     }
 
     document.addEventListener("keydown", (e) => {
