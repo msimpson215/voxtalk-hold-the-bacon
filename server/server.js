@@ -19,18 +19,12 @@ app.post("/session", async (req, res) => {
     const model = "gpt-4o-realtime-preview";
     const voice = "verse";
     const openaiKey = process.env.OPENAI_API_KEY;
-
-    if (!openaiKey) {
-      return res.status(500).json({ error: "Missing OPENAI_API_KEY" });
-    }
+    if (!openaiKey) return res.status(500).json({ error: "Missing OPENAI_API_KEY" });
 
     const r = await fetch("https://api.openai.com/v1/realtime/sessions", {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${openaiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ model, voice }),
+      headers: { Authorization: `Bearer ${openaiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model, voice })
     });
 
     const data = await r.json();
