@@ -45,28 +45,20 @@
     }
 
     async function initRealtime() {
-      console.log("🔄 Starting session fetch...");
       const s = await fetch("/session", { method:"POST" });
       const { client_secret, model, voice, deepgramKey } = await s.json();
-      console.log("✅ Got session keys", { model, voice, deepgramKey: !!deepgramKey });
 
       const pc = new RTCPeerConnection();
-      pc.ontrack = (ev)=> { 
-        console.log("🎧 Remote audio track received"); 
-        rtAudio.srcObject = ev.streams[0]; 
-      };
+      pc.ontrack = (ev)=> { rtAudio.srcObject = ev.streams[0]; };
 
       const dc = pc.createDataChannel("events");
-
       dc.onopen = () => {
         console.log("📡 Data channel open");
-        // Kickstart with a hello
         dc.send(JSON.stringify({
           type:"response.create",
-          response:{ instructions:"Hello, can you hear me?" }
+          response:{ instructions:"Hello, testing connection." }
         }));
       };
-
       dc.onmessage = (e)=> {
         console.log("📡 Raw event:", e.data);
         try {
@@ -90,13 +82,10 @@
       );
       const answer = { type:"answer", sdp: await r.text() };
       await pc.setRemoteDescription(answer);
-      console.log("✅ Realtime session established");
 
-      console.log("🎙️ Requesting mic...");
       const stream = await navigator.mediaDevices.getUserMedia({ audio:true });
       const micTrack = stream.getTracks()[0];
       pc.addTrack(micTrack, stream);
-      console.log("🎙️ Mic capture started");
 
       const dgStream = new MediaStream([micTrack]);
 
@@ -108,7 +97,6 @@
       } else {
         mime = "";
       }
-      console.log("🎙️ Using mime:", mime || "browser default");
 
       const dgSocket = new WebSocket(
         "wss://api.deepgram.com/v1/listen?model=nova&language=en",
@@ -123,16 +111,13 @@
           const alt = data.channel?.alternatives?.[0];
           const transcript = alt?.transcript;
           if (transcript && transcript.length > 0 && data.is_final) {
-            console.log("🎤 Final transcript:", transcript);
             appendLine("me", transcript);
             dc.send(JSON.stringify({
               type:"response.create",
               response:{ instructions: transcript }
             }));
           }
-        } catch (err) {
-          console.error("Parse error:", err);
-        }
+        } catch {}
       };
 
       const mediaRecorder = new MediaRecorder(dgStream, mime ? { mimeType: mime } : {});
