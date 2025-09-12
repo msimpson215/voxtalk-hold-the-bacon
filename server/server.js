@@ -1,28 +1,19 @@
-let micTrack; // keep a reference
+import express from "express";
+import path from "path";
+import { fileURLToPath } from "url";
 
-async function initRealtime() {
-  // ... session + peer connection setup ...
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-  // Get mic once, add track once
-  const stream = await navigator.mediaDevices.getUserMedia({ audio:true });
-  micTrack = stream.getTracks()[0];
-  pc.addTrack(micTrack, stream);  // only add once
-  micTrack.enabled = false;       // start muted
-  console.log("🎙️ Mic ready (press spacebar to enable)");
-}
+const app = express();
+const PORT = process.env.PORT || 3000;
 
-function startTalking() {
-  if (micTrack) {
-    micTrack.enabled = true;
-    console.log("🎙️ Talking...");
-    timeoutId = setTimeout(stopTalking, 30000); // auto-stop after 30s
-  }
-}
+app.use(express.static(path.join(__dirname, "../public")));
 
-function stopTalking() {
-  if (micTrack) {
-    micTrack.enabled = false;
-    console.log("🔇 Mic stopped");
-    if (timeoutId) clearTimeout(timeoutId);
-  }
-}
+app.get("/health", (req, res) => {
+  res.send("OK");
+});
+
+app.listen(PORT, () => {
+  console.log(`✅ Server running on http://localhost:${PORT}`);
+});
