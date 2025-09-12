@@ -1,23 +1,19 @@
-# fly.toml app configuration file generated for voxtalk-hold-the-bacon on 2025-09-05T01:11:33Z
-#
-# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
-#
-
-app = 'voxtalk-hold-the-bacon'
-primary_region = 'ord'
+app = "voxtalk-minimal"
 
 [build]
+  dockerfile = "Dockerfile"
 
-[http_service]
+[env]
+  PORT = "3000"
+
+[[services]]
   internal_port = 3000
-  force_https = true
-  auto_stop_machines = 'stop'
-  auto_start_machines = true
-  min_machines_running = 0
-  processes = ['app']
+  protocol = "tcp"
 
-[[vm]]
-  memory = '1gb'
-  cpu_kind = 'shared'
-  cpus = 1
-  memory_mb = 1024
+  [[services.ports]]
+    handlers = ["http"]
+    port = 80
+
+  [[services.ports]]
+    handlers = ["tls", "http"]
+    port = 443
