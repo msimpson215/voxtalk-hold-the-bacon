@@ -30,16 +30,18 @@
       pc.ontrack = (ev)=> { rtAudio.srcObject = ev.streams[0]; };
 
       const dc = pc.createDataChannel("events");
+
       dc.onopen = () => {
         console.log("📡 Data channel open");
 
-        // Force audio replies
+        // Force session to always talk back
         dc.send(JSON.stringify({
           type: "session.update",
           session: {
             instructions: "You are a helpful, talkative assistant. Always reply with spoken audio and English text.",
             voice: "verse",
-            modalities: ["audio","text"]
+            modalities: ["audio","text"],
+            turn_detection: null   // ✅ disable VAD so it replies immediately
           }
         }));
 
