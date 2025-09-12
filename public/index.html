@@ -43,12 +43,13 @@
         {
           method:"POST",
           headers:{
-            "Authorization":`Bearer ${client_secret.value}`,
+            "Authorization":`Bearer ${client_secret}`,
             "Content-Type":"application/sdp"
           },
           body: offer.sdp
         }
       );
+      
       const answer = { type:"answer", sdp: await r.text() };
       await pc.setRemoteDescription(answer);
     }
